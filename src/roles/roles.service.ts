@@ -1,7 +1,7 @@
 // src/roles/roles.service.ts
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm'; // ✅ Added In here
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -30,12 +30,15 @@ export class RolesService {
 
   /** List all roles (with their permissions) */
   findAll(): Promise<Role[]> {
-    return this.roleRepo.find();
+    return this.roleRepo.find({ relations: ['permissions'] });
   }
 
   /** Find one role by ID */
   async findOne(id: string): Promise<Role> {
-    const role = await this.roleRepo.findOneBy({ id });
+    const role = await this.roleRepo.findOne({
+      where: { id },
+      relations: ['permissions'],
+    });
     if (!role) throw new NotFoundException(`Role ${id} not found`);
     return role;
   }
@@ -52,5 +55,10 @@ export class RolesService {
   /** Remove a role */
   async remove(id: string): Promise<void> {
     await this.roleRepo.delete(id);
+  }
+
+  /** Find roles by names */
+  async findByNames(names: string[]): Promise<Role[]> {
+    return this.roleRepo.findBy({ name: In(names) }); // ✅ Uses In from TypeORM
   }
 }

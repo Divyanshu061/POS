@@ -30,6 +30,7 @@ import { RolesModule } from '../roles/roles.module';
   controllers: [UsersController],
   exports: [
     // Export UserService for AuthModule (and any other module) to inject
+    TypeOrmModule,
     UserService,
   ],
 })

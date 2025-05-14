@@ -1,12 +1,12 @@
 // src/user/dto/update-user.dto.ts
+
 import {
   IsString,
   IsEmail,
   IsOptional,
-  IsEnum,
+  MinLength,
   IsBoolean,
 } from 'class-validator';
-import { UserRole } from '../../entities/user.entity';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -19,11 +19,8 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(8)
   password?: string;
-
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
 
   @IsOptional()
   @IsBoolean()

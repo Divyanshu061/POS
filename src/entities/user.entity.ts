@@ -1,19 +1,25 @@
+// src/entities/user.entity.ts
+
 import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
   ManyToMany,
   JoinTable,
+  BeforeInsert,
+  BeforeUpdate,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  Index,
 } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 import { Role } from './role.entity';
 
-export enum UserRole {
-  ADMIN = 'admin',
-  STORE_MANAGER = 'store_manager',
-  SALES_REP = 'sales_rep',
-}
+const SALT_ROUNDS = 10;
 
-@Entity()
+@Entity('user')
+@Index('IDX_USER_EMAIL', ['email'], { unique: true }) // index for fast lookup
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -21,19 +27,59 @@ export class User {
   @Column()
   name!: string;
 
-  @Column({ unique: true })
+  @Column()
+  @Index() // secondary index if you filter often
   email!: string;
 
-  @Column()
+  /**
+   * Store the bcrypt hash only when explicitly selected
+   */
+  @Column({ select: false })
   password!: string;
 
-  @Column({ type: 'enum', enum: UserRole, nullable: true })
-  role!: UserRole;
-
+  /**
+   * Soft-delete flag; you can also filter on this in repositories
+   */
   @Column({ default: true })
   isActive!: boolean;
 
-  @ManyToMany(() => Role)
-  @JoinTable({ name: 'user_roles' })
+  /**
+   * Many-to-many relation to Role.
+   * Cascade is optional—only use if you plan to create Roles inline.
+   */
+  @ManyToMany(() => Role, { cascade: false, eager: true })
+  @JoinTable({
+    name: 'user_roles',
+    joinColumn: { name: 'userId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'roleId', referencedColumnName: 'id' },
+  })
   roles!: Role[];
+
+  /** Auditing columns */
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
+
+  @DeleteDateColumn()
+  deletedAt?: Date;
+
+  /** Before saving, hash any new or modified password */
+  @BeforeInsert()
+  @BeforeUpdate()
+  async hashPassword(): Promise<void> {
+    if (this.password && !this.password.startsWith('$2b$')) {
+      this.password = await bcrypt.hash(this.password, SALT_ROUNDS);
+    }
+  }
+
+  /**
+   * Compare a plain text password against the stored hash.
+   * Use in your AuthService instead of raw bcrypt.compare.
+   */
+  async comparePassword(candidate: string): Promise<boolean> {
+    // `password` must be explicitly selected when querying
+    return bcrypt.compare(candidate, this.password);
+  }
 }
