@@ -1,5 +1,3 @@
-// src/inventory/entities/warehouse.entity.ts
-
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -8,8 +6,8 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { StockLevel } from './stock-level.entity';
-import { Transaction } from './transaction.entity';
+import { StockLevel } from '../../stock-level/entities/stock-level.entity';
+import { Transaction } from '../../transaction/entities/transaction.entity';
 
 @Entity()
 export class Warehouse {
@@ -25,12 +23,10 @@ export class Warehouse {
   @Column('uuid')
   companyId!: string;
 
-  // link to stock‐levels
-  @OneToMany(() => StockLevel, (sl: StockLevel) => sl.warehouse)
+  @OneToMany(() => StockLevel, (sl) => sl.warehouse)
   stockLevels!: StockLevel[];
 
-  // link to transactions
-  @OneToMany(() => Transaction, (tx: Transaction) => tx.warehouse)
+  @OneToMany(() => Transaction, (tx) => tx.warehouse)
   transactions!: Transaction[];
 
   @CreateDateColumn()

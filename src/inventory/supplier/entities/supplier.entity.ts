@@ -3,31 +3,27 @@ import {
   PrimaryGeneratedColumn,
   Column,
   OneToMany,
-  ManyToOne,
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { Product } from './product.entity';
+import { Product } from '../../product/entities/product.entity';
 
 @Entity()
-export class Category {
+export class Supplier {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
   @Column()
   name!: string;
 
-  @ManyToOne(() => Category, (cat) => cat.children, { nullable: true })
-  parent?: Category;
-
-  @OneToMany(() => Category, (cat) => cat.parent)
-  children!: Category[];
-
-  @OneToMany(() => Product, (p) => p.category)
-  products!: Product[];
+  @Column({ nullable: true })
+  contactInfo?: string;
 
   @Column('uuid')
   companyId!: string;
+
+  @OneToMany(() => Product, (product) => product.supplier)
+  products!: Product[];
 
   @CreateDateColumn()
   createdAt!: Date;

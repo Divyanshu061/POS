@@ -10,6 +10,7 @@ import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
 import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { InventoryModule } from './inventory/inventory.module'; // ← added
 
 import { ClerkAuthGuard } from './auth/guards/clerk-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -47,6 +48,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
     UserModule,
     RolesModule,
     PermissionsModule,
+    InventoryModule, // ← added
   ],
   providers: [
     // Global validation pipe: strips unknown props, forbids non-whitelisted, auto-transforms

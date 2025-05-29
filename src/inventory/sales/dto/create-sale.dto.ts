@@ -1,0 +1,10 @@
+// src/inventory/sales/dto/create-sale.dto.ts
+
+import { IsUUID, IsInt, Min, IsNumber } from 'class-validator';
+
+export class CreateSaleDto {
+  @IsUUID() productId!: string;
+  @IsInt() @Min(1) quantity!: number;
+  @IsNumber() unitPrice!: number;
+  @IsUUID() companyId!: string;
+}
