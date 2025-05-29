@@ -18,8 +18,8 @@ import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
 
 import { ProductService } from './product.service';
-import { CreateProductDto } from '../dto/create-product.dto';
-import { UpdateProductDto } from '../dto/update-product.dto';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
 
 @Controller('inventory/products')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -53,7 +53,8 @@ export class ProductController {
     @Query('companyId', new ValidationPipe({ whitelist: true }))
     companyId: string,
   ) {
-    return this.svc.create({ ...dto, companyId });
+    // Pass companyId as first argument, dto second
+    return this.svc.create(companyId, dto);
   }
 
   @Patch(':id')

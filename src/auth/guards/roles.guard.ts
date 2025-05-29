@@ -1,4 +1,5 @@
 // src/auth/guards/roles.guard.ts
+
 import {
   Injectable,
   CanActivate,
@@ -27,50 +28,61 @@ export class RolesGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles =
-      this.reflector.get<string[]>('roles', context.getHandler()) ||
+      this.reflector.get<string[]>('roles', context.getHandler()) ??
       this.reflector.get<string[]>('roles', context.getClass());
 
     if (!requiredRoles?.length) {
       return true;
     }
 
-    const req = context.switchToHttp().getRequest<AuthenticatedRequest>();
-    const userId = req.user?.userId;
+    const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    const userId = request.user?.userId;
+
     if (!userId) {
-      this.logger.warn(`Request missing userId; denying access.`);
+      this.logger.warn('Request missing userId; denying access.');
       return false;
     }
 
     try {
-      // load user with roles once per request
       const user = await this.userRepo.findOne({
         where: { id: userId },
         relations: ['roles'],
       });
 
       if (!user) {
-        this.logger.warn(`User ${userId} not found; denying access.`);
+        this.logger.warn(`User with ID "${userId}" not found; denying access.`);
         return false;
       }
 
-      const userRoles = user.roles.map((r) => r.name);
-      const allowed = requiredRoles.some((r) => userRoles.includes(r));
+      if (!user.roles || !Array.isArray(user.roles)) {
+        this.logger.error(
+          `User ${userId} fetched without roles or roles is not an array. Value: ${JSON.stringify(user.roles)}`,
+        );
+        return false;
+      }
 
-      if (!allowed) {
+      const userRoles = user.roles.map((role) => role.name);
+      this.logger.log(
+        `Fetched roles for user ${userId}: [${userRoles.join(', ')}]`,
+      );
+
+      const isAllowed = requiredRoles.some((role) => userRoles.includes(role));
+
+      if (!isAllowed) {
         this.logger.warn(
-          `User ${userId} roles [${userRoles.join(
-            ',',
-          )}] do not satisfy [${requiredRoles.join(',')}].`,
+          `Access denied: User ${userId} has roles [${userRoles.join(
+            ', ',
+          )}], but required roles are [${requiredRoles.join(', ')}].`,
         );
       }
 
-      return allowed;
-    } catch (err) {
+      return isAllowed;
+    } catch (error) {
       this.logger.error(
         `Failed role check for user ${userId}: ${
-          err instanceof Error ? err.message : String(err)
+          error instanceof Error ? error.message : String(error)
         }`,
-        err instanceof Error ? err.stack : undefined,
+        error instanceof Error ? error.stack : undefined,
       );
       return false;
     }

@@ -2,22 +2,41 @@
 
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 import type { Request } from 'express';
-import { AuthenticatedUser } from '../interfaces/authenticated-user.interface';
 
 /**
- * @CurrentUser()            → returns AuthenticatedUser | null
- * @CurrentUser('userId')    → returns string | null
+ * Whatever shape you attach to req.user
  */
-export const CurrentUser = createParamDecorator<
-  /* 1st generic: the “data” you pass in */ keyof AuthenticatedUser | undefined,
-  /* 2nd generic: what this decorator returns */ | AuthenticatedUser
-  | AuthenticatedUser[keyof AuthenticatedUser]
-  | null
->((property, ctx: ExecutionContext) => {
-  const req = ctx.switchToHttp().getRequest<Request & { user?: unknown }>();
+interface AuthenticatedUser {
+  id: string;
+  userId: string;
+  email: string;
+  roles: string[];
+  // …any other props you populate
+}
 
-  const user = req.user as AuthenticatedUser | undefined;
-  if (!user) return null;
+/**
+ * Extend the Express Request so `user` is known
+ */
+interface RequestWithUser extends Request {
+  user?: AuthenticatedUser;
+}
 
-  return property ? (user[property] ?? null) : user;
-});
+/**
+ * Usage:
+ *   @CurrentUser()            → AuthenticatedUser | null
+ *   @CurrentUser('email')     → string | null
+ */
+export const CurrentUser = createParamDecorator(
+  // first argument: the "data" you pass in (a key of AuthenticatedUser)
+  // second argument: the ExecutionContext
+  (property: keyof AuthenticatedUser | undefined, ctx: ExecutionContext) => {
+    const req = ctx.switchToHttp().getRequest<RequestWithUser>();
+    const user = req.user ?? null;
+
+    if (!user) {
+      return null;
+    }
+
+    return property ? user[property] : user;
+  },
+);

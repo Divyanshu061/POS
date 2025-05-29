@@ -6,6 +6,13 @@ import { Company } from './entities/company.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
 import { UpdateCompanyDto } from './dto/update-company.dto';
 
+/**
+ * CompanyService encapsulates business logic for managing companies:
+ * - Creation
+ * - Retrieval (single/all)
+ * - Updates
+ * - Deletion
+ */
 @Injectable()
 export class CompanyService {
   constructor(
@@ -13,30 +20,51 @@ export class CompanyService {
     private readonly repo: Repository<Company>,
   ) {}
 
-  create(dto: CreateCompanyDto): Promise<Company> {
-    const company = this.repo.create(dto);
-    return this.repo.save(company);
+  /**
+   * Create and save a new company entity
+   */
+  async create(dto: CreateCompanyDto): Promise<Company> {
+    const entity = this.repo.create(dto);
+    return this.repo.save(entity);
   }
 
-  findAll(): Promise<Company[]> {
+  /**
+   * Retrieve all companies
+   */
+  async findAll(): Promise<Company[]> {
     return this.repo.find();
   }
 
+  /**
+   * Retrieve a single company by its UUID
+   * @throws NotFoundException if the company does not exist
+   */
   async findOne(id: string): Promise<Company> {
-    const comp = await this.repo.findOne({ where: { id } });
-    if (!comp) throw new NotFoundException(`Company ${id} not found`);
-    return comp;
+    const company = await this.repo.findOne({ where: { id } });
+    if (!company) {
+      throw new NotFoundException(`Company with id ${id} not found`);
+    }
+    return company;
   }
 
+  /**
+   * Update an existing company's data
+   * @throws NotFoundException if the company does not exist
+   */
   async update(id: string, dto: UpdateCompanyDto): Promise<Company> {
-    await this.findOne(id);
+    await this.findOne(id); // ensure it exists
     await this.repo.update(id, dto);
     return this.findOne(id);
   }
 
+  /**
+   * Remove a company by its UUID
+   * @throws NotFoundException if the company does not exist
+   */
   async remove(id: string): Promise<void> {
     const result = await this.repo.delete(id);
-    if (!result.affected)
-      throw new NotFoundException(`Company ${id} not found`);
+    if (!result.affected) {
+      throw new NotFoundException(`Company with id ${id} not found`);
+    }
   }
 }

@@ -1,7 +1,8 @@
 // src/roles/roles.service.ts
+
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm'; // ✅ Added In here
+import { Repository, In } from 'typeorm'; // <-- import In here
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 import { CreateRoleDto } from './dto/create-role.dto';
@@ -17,7 +18,10 @@ export class RolesService {
 
   /** Create a new Role with given permissions */
   async create(dto: CreateRoleDto): Promise<Role> {
-    const perms = await this.permRepo.findByIds(dto.permissionIds);
+    // Using In() to find permissions by ID array
+    const perms = await this.permRepo.findBy({
+      id: In(dto.permissionIds),
+    });
     if (perms.length !== dto.permissionIds.length) {
       throw new NotFoundException('One or more permissions not found');
     }
@@ -46,7 +50,9 @@ export class RolesService {
   /** Update a role’s name or permissions */
   async update(id: string, dto: CreateRoleDto): Promise<Role> {
     const role = await this.findOne(id);
-    const perms = await this.permRepo.findByIds(dto.permissionIds);
+    const perms = await this.permRepo.findBy({
+      id: In(dto.permissionIds),
+    });
     role.name = dto.name;
     role.permissions = perms;
     return this.roleRepo.save(role);
@@ -57,8 +63,16 @@ export class RolesService {
     await this.roleRepo.delete(id);
   }
 
-  /** Find roles by names */
+  /**
+   * Find roles by names (case-insensitive).
+   */
   async findByNames(names: string[]): Promise<Role[]> {
-    return this.roleRepo.findBy({ name: In(names) }); // ✅ Uses In from TypeORM
+    if (!names.length) return [];
+
+    const lowerNames = names.map((n) => n.toLowerCase());
+    return this.roleRepo
+      .createQueryBuilder('role')
+      .where('LOWER(role.name) IN (:...names)', { names: lowerNames })
+      .getMany();
   }
 }

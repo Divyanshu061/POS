@@ -6,7 +6,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThanOrEqual } from 'typeorm';
+import { Repository, DataSource, LessThanOrEqual, DeepPartial } from 'typeorm';
 
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -23,12 +23,12 @@ import {
 export class InventoryService {
   constructor(
     private readonly dataSource: DataSource,
+
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+
     @InjectRepository(StockLevel)
     private readonly stockRepo: Repository<StockLevel>,
-    @InjectRepository(Transaction)
-    private readonly transactionRepo: Repository<Transaction>, // can remove if truly unused
   ) {}
 
   // ─── PRODUCT CRUD ─────────────────────────────────
@@ -38,96 +38,131 @@ export class InventoryService {
   }
 
   async findProductById(id: string): Promise<Product> {
-    const idNum = Number(id);
-    const product = await this.productRepo.findOne({ where: { id: idNum } });
+    const productId = parseInt(id, 10);
+    if (isNaN(productId)) {
+      throw new BadRequestException(`Invalid product ID: ${id}`);
+    }
+    const product = await this.productRepo.findOne({
+      where: { id: productId },
+    });
     if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
+      throw new NotFoundException(`Product with ID ${productId} not found`);
     }
     return product;
   }
 
   createProduct(dto: CreateProductDto): Promise<Product> {
-    const product = this.productRepo.create(dto);
+    // pick exactly the entity columns
+    const partial: DeepPartial<Product> = {
+      name: dto.name,
+      sku: dto.sku,
+      barcode: dto.barcode,
+      description: dto.description,
+      unitPrice: dto.unitPrice,
+      companyId: dto.companyId, // string is fine here
+      categoryId:
+        dto.categoryId !== undefined // string|undefined → number|undefined
+          ? Number(dto.categoryId)
+          : undefined,
+      supplierId:
+        dto.supplierId !== undefined ? Number(dto.supplierId) : undefined,
+    };
+
+    const product = this.productRepo.create(partial);
     return this.productRepo.save(product);
   }
 
   async updateProduct(id: string, dto: UpdateProductDto): Promise<Product> {
+    const productId = parseInt(id, 10);
+    if (isNaN(productId)) {
+      throw new BadRequestException(`Invalid product ID: ${id}`);
+    }
     await this.findProductById(id);
-    const idNum = Number(id);
-    await this.productRepo.update(idNum, dto);
+
+    // same flattening for update
+    const partial: DeepPartial<Product> = {
+      ...('name' in dto && { name: dto.name }),
+      ...('sku' in dto && { sku: dto.sku }),
+      ...('barcode' in dto && { barcode: dto.barcode }),
+      ...('description' in dto && { description: dto.description }),
+      ...('unitPrice' in dto && { unitPrice: dto.unitPrice }),
+      ...('companyId' in dto && { companyId: dto.companyId }),
+      ...(dto.categoryId !== undefined && {
+        categoryId: Number(dto.categoryId),
+      }),
+      ...(dto.supplierId !== undefined && {
+        supplierId: Number(dto.supplierId),
+      }),
+    };
+
+    await this.productRepo.update(productId, partial);
     return this.findProductById(id);
   }
 
   async deleteProduct(id: string): Promise<void> {
-    const idNum = Number(id);
-    const result = await this.productRepo.delete(idNum);
+    const productId = parseInt(id, 10);
+    if (isNaN(productId)) {
+      throw new BadRequestException(`Invalid product ID: ${id}`);
+    }
+    const result = await this.productRepo.delete(productId);
     if (!result.affected) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
+      throw new NotFoundException(`Product with ID ${productId} not found`);
     }
   }
 
   // ─── STOCK & TRANSACTIONS ─────────────────────────
 
   async adjustStock(dto: AdjustStockDto): Promise<StockLevel> {
-    const productIdNum = Number(dto.productId);
-    const warehouseIdNum = Number(dto.warehouseId);
-
     const txType: TransactionType =
       dto.type === StockAction.IN ? TransactionType.IN : TransactionType.OUT;
 
     return this.dataSource.transaction(async (manager) => {
-      // Step 1: Create transaction record
-      const transaction = manager.create(Transaction, {
-        productId,
-        warehouseId,
+      const tx = manager.create(Transaction, {
+        productId: dto.productId,
+        warehouseId: dto.warehouseId,
         companyId: dto.companyId,
         type: txType,
         quantity: dto.quantity,
-        reference: dto.reference || null,
+        reference: dto.reference,
       });
-      await manager.save(transaction);
+      await manager.save(tx);
 
-      // 2) Find or create the stock level
       let sl = await manager.findOne(StockLevel, {
         where: {
-          productId: productIdNum,
-          warehouseId: warehouseIdNum,
+          productId: dto.productId,
+          warehouseId: dto.warehouseId,
           companyId: dto.companyId,
         },
       });
       if (!sl) {
         sl = manager.create(StockLevel, {
-          productId: productIdNum,
-          warehouseId: warehouseIdNum,
+          productId: dto.productId,
+          warehouseId: dto.warehouseId,
           companyId: dto.companyId,
           quantity: 0,
         });
       }
 
-      // 3) Adjust quantity
       if (dto.type === StockAction.IN) {
         sl.quantity += dto.quantity;
       } else {
         if (sl.quantity < dto.quantity) {
           throw new BadRequestException(
-            `Insufficient stock: have ${sl.quantity}, trying to remove ${dto.quantity}`,
+            `Insufficient stock: have ${sl.quantity}, removing ${dto.quantity}`,
           );
         }
         sl.quantity -= dto.quantity;
       }
 
-      // 4) Persist & return
       return manager.save(sl);
     });
   }
 
   getStockLevel(productId: string, warehouseId: string): Promise<StockLevel> {
-    const productIdNum = Number(productId);
-    const warehouseIdNum = Number(warehouseId);
     return this.stockRepo.findOneOrFail({
       where: {
-        productId: productIdNum,
-        warehouseId: warehouseIdNum,
+        productId,
+        warehouseId,
       },
     });
   }

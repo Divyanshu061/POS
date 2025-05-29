@@ -27,9 +27,7 @@ export class Company {
   })
   products!: Product[];
 
-  @OneToMany(() => Transaction, (tx) => tx.company, {
-    cascade: true,
-  })
+  @OneToMany(() => Transaction, (tx) => tx.company, {})
   transactions!: Transaction[];
 
   @OneToMany(() => StockLevel, (sl) => sl.company, {

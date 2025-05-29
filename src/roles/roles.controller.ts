@@ -31,6 +31,16 @@ export class RolesController {
     return this.rolesSvc.findAll();
   }
 
+  /** GET /roles/summary */
+  @Get('summary')
+  async summary(): Promise<{ count: number; roles: string[] }> {
+    const all = await this.rolesSvc.findAll();
+    return {
+      count: all.length,
+      roles: all.map((r) => r.name),
+    };
+  }
+
   /** GET /roles/:id */
   @Get(':id')
   findOne(@Param('id') id: string): Promise<Role> {

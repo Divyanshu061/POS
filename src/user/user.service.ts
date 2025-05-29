@@ -42,10 +42,12 @@ export class UserService {
 
   /** AUTH lookup: explicitly include password hash */
   async findOneByEmailWithPassword(email: string): Promise<User | null> {
-    return this.userRepo.findOne({
-      where: { email },
-      select: ['id', 'email', 'password'],
-    });
+    return this.userRepo
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .leftJoinAndSelect('user.roles', 'roles')
+      .where('user.email = :email', { email })
+      .getOne();
   }
 
   /** Create new user—hashing lives in the entity hooks */

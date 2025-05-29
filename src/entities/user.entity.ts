@@ -18,36 +18,30 @@ import { Role } from './role.entity';
 
 const SALT_ROUNDS = 10;
 
-@Entity('user')
-@Index('IDX_USER_EMAIL', ['email'], { unique: true }) // index for fast lookup
+@Entity({ name: 'user' })
+@Index('IDX_USERS_EMAIL_UNIQUE', ['email'], { unique: true })
 export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column()
+  /** Full name of the user */
+  @Column({ length: 100 })
   name!: string;
 
-  @Column()
-  @Index() // secondary index if you filter often
+  /** Unique email used for login and notifications */
+  @Column({ length: 150 })
   email!: string;
 
-  /**
-   * Store the bcrypt hash only when explicitly selected
-   */
+  /** Hashed password, excluded from queries by default */
   @Column({ select: false })
   password!: string;
 
-  /**
-   * Soft-delete flag; you can also filter on this in repositories
-   */
+  /** Soft-delete flag to deactivate accounts without dropping rows */
   @Column({ default: true })
   isActive!: boolean;
 
-  /**
-   * Many-to-many relation to Role.
-   * Cascade is optional—only use if you plan to create Roles inline.
-   */
-  @ManyToMany(() => Role, { cascade: false, eager: true })
+  /** User roles for authorization, loaded eagerly */
+  @ManyToMany(() => Role, { eager: true })
   @JoinTable({
     name: 'user_roles',
     joinColumn: { name: 'userId', referencedColumnName: 'id' },
@@ -55,17 +49,19 @@ export class User {
   })
   roles!: Role[];
 
-  /** Auditing columns */
-  @CreateDateColumn()
+  /** Timestamp when the user was created */
+  @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  /** Timestamp when the user was last updated */
+  @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt!: Date;
 
-  @DeleteDateColumn()
+  /** Soft-delete timestamp; set when user is deactivated */
+  @DeleteDateColumn({ type: 'timestamptz' })
   deletedAt?: Date;
 
-  /** Before saving, hash any new or modified password */
+  /** Lifecycle hook: hash password before inserting/updating */
   @BeforeInsert()
   @BeforeUpdate()
   async hashPassword(): Promise<void> {
@@ -74,12 +70,9 @@ export class User {
     }
   }
 
-  /**
-   * Compare a plain text password against the stored hash.
-   * Use in your AuthService instead of raw bcrypt.compare.
-   */
+  /** Compare plaintext password with stored hash */
   async comparePassword(candidate: string): Promise<boolean> {
-    // `password` must be explicitly selected when querying
+    // Make sure to select password when querying
     return bcrypt.compare(candidate, this.password);
   }
 }

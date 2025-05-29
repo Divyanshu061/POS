@@ -1,6 +1,6 @@
 // src/user/user.module.ts
 
-import { Module, forwardRef } from '@nestjs/common';
+import { Module, forwardRef, Global } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { User } from '../entities/user.entity';
@@ -11,25 +11,26 @@ import { RolesModule } from '../roles/roles.module';
 
 /**
  * The UserModule encapsulates everything related to user management:
- * - Provides UserService to other modules (e.g. AuthModule)
+ * - Provides UserService to other modules (e.g., AuthModule)
  * - Registers the User repository with TypeORM
- * - Declares UsersController for HTTP endpoints
+ * - Declares UsersController for handling HTTP endpoints
  */
+@Global()
 @Module({
   imports: [
-    // Only register the User entity here; Role logic lives in RolesModule
+    // Register User entity for TypeORM
     TypeOrmModule.forFeature([User]),
 
-    // Allow AuthModule ↔ UserModule circular injection
+    // Handle circular dependency between AuthModule and UserModule
     forwardRef(() => AuthModule),
 
-    // Bring in RolesModule so UserService can assign roles by name/ID
+    // Import RolesModule to allow role assignment in UserService
     RolesModule,
   ],
   providers: [UserService],
   controllers: [UsersController],
   exports: [
-    // Export UserService for AuthModule (and any other module) to inject
+    // Export both UserService and TypeORM repository for use in other modules
     TypeOrmModule,
     UserService,
   ],

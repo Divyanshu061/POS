@@ -9,41 +9,39 @@ import { APP_GUARD } from '@nestjs/core';
 
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import { ClerkStrategy } from './strategies/clerk.strategy';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { ClerkAuthGuard } from './guards/clerk-auth.guard';
+import { LocalStrategy } from './strategies/local.strategy';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 
 import { UserModule } from '../user/user.module';
 import { RolesModule } from '../roles/roles.module';
 import { PermissionsModule } from '../permissions/permissions.module';
-
 import { User } from '../entities/user.entity';
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 
 /**
- * AuthModule handles authentication & authorization:
- * - Global configuration of JWT and Passport
- * - Provides AuthService for token issuance & validation
- * - Applies global guards: ClerkAuthGuard (authentication) and RolesGuard (authorization)
+ * The AuthModule encapsulates JWT-based authentication and authorization.
+ * It registers the Passport JWT strategy, JWT module, and global guards.
  */
 @Module({
   imports: [
-    // load .env and make ConfigService available app-wide
-    ConfigModule.forRoot({ isGlobal: true }),
+    // Shared configuration is loaded at the AppModule level; here we import ConfigModule for token settings
+    ConfigModule,
 
-    // break circular dependency: AuthService ↔ UserService
+    // TypeORM entities for user, role, and permission lookups in guards and strategy
+    TypeOrmModule.forFeature([User, Role, Permission]),
+
+    // Circular dependency resolution for User, Roles, and Permissions modules
     forwardRef(() => UserModule),
-
-    // ensure roles & permissions services are available to Guards
     forwardRef(() => RolesModule),
     forwardRef(() => PermissionsModule),
 
-    // Passport setup with Clerk strategy, no sessions
-    PassportModule.register({ defaultStrategy: 'clerk', session: false }),
+    // Passport sets up JWT as default strategy, no session storage
+    PassportModule.register({ defaultStrategy: 'jwt', session: false }),
 
-    // JWT configuration async and global
+    // JWT token configuration (secret and expiry) pulled from ConfigService
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -52,20 +50,17 @@ import { Permission } from '../entities/permission.entity';
         signOptions: { expiresIn: config.get<string>('JWT_EXPIRATION') },
       }),
     }),
-
-    // register TypeORM repositories for direct injection in Guards/Strategies
-    TypeOrmModule.forFeature([User, Role, Permission]),
   ],
   controllers: [AuthController],
   providers: [
     AuthService,
-    ClerkStrategy,
     JwtStrategy,
+    LocalStrategy,
 
-    // first authenticate requests, then enforce roles
-    { provide: APP_GUARD, useClass: ClerkAuthGuard },
+    // Apply JWTAuthGuard and RolesGuard globally
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
-  exports: [AuthService, PassportModule, JwtModule],
+  exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

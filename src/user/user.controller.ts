@@ -7,12 +7,12 @@ import {
   Patch,
   Param,
   Body,
-  UseGuards,
   Logger,
   ForbiddenException,
   ParseUUIDPipe,
   Inject,
   forwardRef,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,7 +27,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { AssignRolesDto } from './dto/assign-roles.dto';
 
-import { ClerkAuthGuard } from '../auth/guards/clerk-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
@@ -36,8 +36,6 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { UserResponseDto } from '../auth/dto/user-response.dto';
 
 @ApiTags('Users')
-@ApiBearerAuth()
-@UseGuards(ClerkAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
   private readonly logger = new Logger(UsersController.name);
@@ -59,32 +57,30 @@ export class UsersController {
   @Post('signup')
   async create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     this.logger.log(`Creating user ${dto.email}`);
-    // 1) create the user
     const user = await this.userService.create(dto);
 
-    // 2) assign by IDs if provided
+    // Assign roles by IDs or names
     if (dto.roleIds?.length) {
       await this.userService.assignRoles(user.id, { roleIds: dto.roleIds });
-    }
-    // 3) otherwise assign by names if provided
-    else if (dto.roleNames?.length) {
+    } else if (dto.roleNames?.length) {
       const roles = await this.roleService.findByNames(dto.roleNames);
       const ids = roles.map((r) => r.id);
       await this.userService.assignRoles(user.id, { roleIds: ids });
     }
 
-    // 4) reload the user so roles are eager-loaded
     const complete = await this.userService.findOne(user.id);
     return new UserResponseDto(complete);
   }
 
   @Public()
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({
     status: 200,
     description: 'User profile',
     type: UserResponseDto,
   })
+  @UseGuards(JwtAuthGuard)
   @Get('me')
   async getProfile(
     @CurrentUser('userId') userId: string | null,
@@ -98,13 +94,15 @@ export class UsersController {
     return new UserResponseDto(user);
   }
 
-  @Roles('admin')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'List all users (admin only)' })
   @ApiResponse({
     status: 200,
     description: 'Array of users',
     type: [UserResponseDto],
   })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @Get()
   async findAll(): Promise<UserResponseDto[]> {
     this.logger.log(`Listing all users`);
@@ -112,13 +110,15 @@ export class UsersController {
     return users.map((u) => new UserResponseDto(u));
   }
 
-  @Roles('admin')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Update a user (self or admin)' })
   @ApiResponse({
     status: 200,
     description: 'User updated',
     type: UserResponseDto,
   })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @Patch(':id')
   async update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -130,7 +130,6 @@ export class UsersController {
       this.logger.warn(`Unauthorized update attempt`);
       throw new ForbiddenException('Not authenticated');
     }
-    // allow self-update or admin
     if (meId !== id && !myRoles.includes('admin')) {
       this.logger.warn(`User ${meId} forbidden to update ${id}`);
       throw new ForbiddenException('Not allowed to update this user');
@@ -140,13 +139,15 @@ export class UsersController {
     return new UserResponseDto(updated);
   }
 
-  @Roles('admin')
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Assign roles to a user (admin only)' })
   @ApiResponse({
     status: 200,
     description: 'Roles assigned',
     type: UserResponseDto,
   })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('admin')
   @Patch(':id/roles')
   async assignRoles(
     @Param('id', ParseUUIDPipe) id: string,

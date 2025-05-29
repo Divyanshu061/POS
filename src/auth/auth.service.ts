@@ -2,8 +2,8 @@
 
 import {
   Injectable,
+  ConflictException,
   UnauthorizedException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -12,20 +12,22 @@ import * as bcrypt from 'bcrypt';
 
 import { UserService } from '../user/user.service';
 import { RolesService } from '../roles/roles.service';
-import { LoginDto } from './dto/login.dto';
 import { SignUpDto } from './dto/sign-up.dto';
-import { UserResponseDto } from './dto/user-response.dto';
+import { LoginDto } from './dto/login.dto';
+import { AuthenticatedUser } from './interfaces/authenticated-user.interface';
+import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { User } from '../entities/user.entity';
+import { Role } from '../entities/role.entity';
 
-export interface JwtPayload {
-  sub: string;
-  email: string;
-  roles: string[];
-}
+const ERRORS = {
+  INVALID_CREDENTIALS: 'Invalid email or password',
+  USER_NOT_FOUND: 'User not found',
+  EMAIL_TAKEN: (email: string) => `Email ${email} is already registered`,
+};
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-
   private readonly jwtSecret: string;
   private readonly jwtExpiry: string;
   private readonly jwtRefreshSecret: string;
@@ -33,143 +35,224 @@ export class AuthService {
 
   constructor(
     private readonly userService: UserService,
-    private readonly roleService: RolesService,
+    private readonly rolesService: RolesService,
     private readonly jwtService: JwtService,
-    configService: ConfigService,
+    private readonly configService: ConfigService,
   ) {
-    this.jwtSecret = configService.get('JWT_SECRET', 'fallback');
-    this.jwtExpiry = configService.get('JWT_EXPIRATION', '15m');
-    this.jwtRefreshSecret = configService.get(
-      'JWT_REFRESH_SECRET',
-      'refreshFallback',
+    this.jwtSecret = this.configService.get<string>(
+      'JWT_SECRET',
+      'fallbackSecret',
     );
-    this.jwtRefreshExpiry = configService.get('JWT_REFRESH_EXPIRATION', '7d');
+    this.jwtExpiry = this.configService.get<string>('JWT_EXPIRATION', '15m');
+    this.jwtRefreshSecret = this.configService.get<string>(
+      'JWT_REFRESH_SECRET',
+      'fallbackRefresh',
+    );
+    this.jwtRefreshExpiry = this.configService.get<string>(
+      'JWT_REFRESH_EXPIRATION',
+      '7d',
+    );
   }
 
-  /** Register a new user, assign any roles, and return tokens */
   async signUp(dto: SignUpDto): Promise<{
-    user: UserResponseDto;
+    user: AuthenticatedUser;
     accessToken: string;
     refreshToken: string;
   }> {
-    // 1) Prevent duplicate email
-    if (await this.userService.findOneByEmail(dto.email)) {
-      throw new BadRequestException(`Email ${dto.email} already registered`);
+    const existing = await this.userService.findOneByEmail(dto.email);
+    if (existing) {
+      this.logger.warn(`Signup failed: email ${dto.email} already in use`);
+      throw new ConflictException(ERRORS.EMAIL_TAKEN(dto.email));
     }
 
-    // 2) Create user (password hashing happens in entity or service)
-    const newUser = await this.userService.create(dto);
+    const newUser: User = await this.userService.create(dto);
+    this.logger.log(`User created: ${newUser.id}`);
 
-    // 3) Determine if we need to assign roles
-    let assignIds: string[] = [];
-    if (Array.isArray(dto.roleIds) && dto.roleIds.length > 0) {
-      assignIds = dto.roleIds;
-    } else if (Array.isArray(dto.roleNames) && dto.roleNames.length > 0) {
-      const roles = await this.roleService.findByNames(dto.roleNames);
-      assignIds = roles.map((r) => r.id);
+    const roleIds = await this.resolveRoleIds(dto.roleIds, dto.roleNames);
+    if (roleIds.length) {
+      await this.userService.assignRoles(newUser.id, { roleIds });
+      this.logger.log(
+        `Roles [${roleIds.join(', ')}] assigned to ${newUser.id}`,
+      );
     }
 
-    if (assignIds.length) {
-      await this.userService.assignRoles(newUser.id, { roleIds: assignIds });
-    }
+    const created = await this.userService.findOne(newUser.id);
+    const authUser = this.mapToAuthenticatedUser(created);
+    const { accessToken, refreshToken } = this.createTokens(authUser);
 
-    // 4) Reload with roles and strip password
-    const complete = await this.userService.findOne(newUser.id);
-    const safeUser = new UserResponseDto(complete);
-
-    // 5) Issue tokens
-    const { accessToken, refreshToken } = this.createTokens(safeUser);
-    this.logger.log(`User signed up: ${safeUser.email}`);
-
-    return { user: safeUser, accessToken, refreshToken };
+    return { user: authUser, accessToken, refreshToken };
   }
 
-  /** Validate credentials and return user + tokens */
   async signIn(dto: LoginDto): Promise<{
-    user: UserResponseDto;
+    user: AuthenticatedUser;
     accessToken: string;
     refreshToken: string;
   }> {
-    const user = await this.validateUser(dto.email, dto.password);
-    const safeUser = new UserResponseDto(user);
+    const userEntity = await this.validateCredentials(dto.email, dto.password);
+    const authUser = this.mapToAuthenticatedUser(userEntity);
 
-    const { accessToken, refreshToken } = this.createTokens(safeUser);
-    this.logger.log(`User signed in: ${safeUser.email}`);
+    this.logger.log(
+      `User signed in: id=${userEntity.id}, email=${userEntity.email}`,
+    );
 
-    return { user: safeUser, accessToken, refreshToken };
+    const { accessToken, refreshToken } = this.createTokens(authUser);
+    return { user: authUser, accessToken, refreshToken };
   }
 
-  /** Given a refresh token, issue new tokens */
-  async refreshToken(oldToken: string): Promise<{
-    accessToken: string;
-    refreshToken: string;
-  }> {
+  async refreshTokens(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     let payload: JwtPayload;
     try {
-      payload = await this.jwtService.verifyAsync<JwtPayload>(oldToken, {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
         secret: this.jwtRefreshSecret,
       });
     } catch {
-      this.logger.warn('Invalid refresh token');
-      throw new UnauthorizedException('Invalid refresh token');
+      this.logger.warn('Refresh token invalid');
+      throw new UnauthorizedException(ERRORS.INVALID_CREDENTIALS);
     }
 
-    const user = await this.userService.findOne(payload.sub);
-    const safeUser = new UserResponseDto(user);
-    const tokens = this.createTokens(safeUser);
-
-    return tokens;
-  }
-
-  /** Used by Passport JwtStrategy to validate a token’s payload */
-  async validateJwtPayload(payload: JwtPayload): Promise<UserResponseDto> {
-    const user = await this.userService.findOne(payload.sub);
-    if (!user) {
-      this.logger.warn(`JWT validation failed: no user ${payload.sub}`);
-      throw new UnauthorizedException('User not found');
+    if (!payload.sub || typeof payload.sub !== 'string') {
+      this.logger.warn('Malformed refresh token payload');
+      throw new UnauthorizedException('Malformed refresh token');
     }
-    return new UserResponseDto(user);
+
+    const userEntity = await this.userService.findOne(payload.sub);
+    if (!userEntity) {
+      this.logger.warn(`Refresh failed: no user ${payload.sub}`);
+      throw new UnauthorizedException(ERRORS.USER_NOT_FOUND);
+    }
+
+    const authUser = this.mapToAuthenticatedUser(userEntity);
+    this.logger.log(`Tokens refreshed for ${authUser.email}`);
+    return this.createTokens(authUser);
   }
 
-  // ─── Private Helpers ────────────────────────────────────────────────
+  // ─── Private Helpers ────────────────────────────────────────────
 
-  /** Ensures email & password match a real user */
-  private async validateUser(email: string, plain: string) {
+  public async validateCredentials(
+    email: string,
+    password: string,
+  ): Promise<User> {
+    // 1️⃣ Fetch the user _with_ password
     const user = await this.userService.findOneByEmailWithPassword(email);
+    // 2️⃣ Check user existence
     if (!user) {
-      this.logger.warn(`Login failed (no user): ${email}`);
-      throw new UnauthorizedException('Invalid credentials');
+      this.logger.warn(`Login failed: no user for ${email}`);
+      throw new UnauthorizedException(ERRORS.INVALID_CREDENTIALS);
     }
-    if (!(await bcrypt.compare(plain, user.password))) {
-      this.logger.warn(`Login failed (bad password): ${email}`);
-      throw new UnauthorizedException('Invalid credentials');
+    // 3️⃣ Guard against a missing hash
+    if (!user.password) {
+      this.logger.error(
+        `Login failed: password hash missing for user ${email}`,
+      );
+      throw new UnauthorizedException('Password data is corrupt');
     }
+    // ←── Insert your debug log here ───────────────────────────
+    console.log({
+      passwordInput: password,
+      hash: user.password,
+    });
+    // ────────────────────────────────────────────────────────────→
+    // 4️⃣ Now compare
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      this.logger.warn(`Login failed: wrong password for ${email}`);
+      throw new UnauthorizedException(ERRORS.INVALID_CREDENTIALS);
+    }
+    // 5️⃣ All good—return the full user entity (with roles, etc.)
     return user;
   }
 
-  /** Builds JWT access + refresh tokens */
-  private createTokens(user: UserResponseDto): {
+  private async resolveRoleIds(
+    roleIds?: string[],
+    roleNames?: string[],
+  ): Promise<string[]> {
+    if (Array.isArray(roleIds) && roleIds.length) {
+      return roleIds;
+    }
+    if (Array.isArray(roleNames) && roleNames.length) {
+      const roles: Role[] = await this.rolesService.findByNames(roleNames);
+      const found = roles.map((r) => r.id);
+      if (found.length !== roleNames.length) {
+        this.logger.warn(`Invalid roles: ${roleNames.join(', ')}`);
+        throw new UnauthorizedException('Invalid roles specified');
+      }
+      return found;
+    }
+    return [];
+  }
+
+  private mapToAuthenticatedUser(user: User): AuthenticatedUser {
+    return {
+      userId: user.id,
+      id: user.id,
+      email: user.email,
+      roles: (user.roles ?? [])
+        .filter((r): r is Role => !!r && typeof r.name === 'string')
+        .map((r) => r.name),
+    };
+  }
+
+  private signJwt(
+    payload: JwtPayload,
+    secret: string,
+    expiresIn: string,
+  ): string {
+    return this.jwtService.sign(payload, { secret, expiresIn });
+  }
+
+  private createTokens(user: AuthenticatedUser): {
     accessToken: string;
     refreshToken: string;
   } {
     const payload: JwtPayload = {
-      sub: user.id,
+      sub: user.userId,
       email: user.email,
-      roles: user.roles.map((r) => r.name),
+      roles: user.roles,
     };
 
-    const accessToken = this.jwtService.sign(payload, {
-      secret: this.jwtSecret,
-      expiresIn: this.jwtExpiry,
-    });
-    const refreshToken = this.jwtService.sign(
-      { sub: user.id },
-      {
-        secret: this.jwtRefreshSecret,
-        expiresIn: this.jwtRefreshExpiry,
-      },
-    );
+    return {
+      accessToken: this.signJwt(payload, this.jwtSecret, this.jwtExpiry),
+      refreshToken: this.signJwt(
+        { sub: user.userId },
+        this.jwtRefreshSecret,
+        this.jwtRefreshExpiry,
+      ),
+    };
+  }
 
-    return { accessToken, refreshToken };
+  // ─── Strategy Validation Methods ───────────────────────────────
+
+  public async validateJwtPayload(
+    payload: JwtPayload,
+  ): Promise<AuthenticatedUser> {
+    const userEntity = await this.userService.findOne(payload.sub);
+    if (!userEntity) {
+      this.logger.warn(`JWT validation failed: no user ${payload.sub}`);
+      throw new UnauthorizedException(ERRORS.USER_NOT_FOUND);
+    }
+    return this.mapToAuthenticatedUser(userEntity);
+  }
+
+  public async validateUser(
+    email: string,
+    password: string,
+  ): Promise<AuthenticatedUser> {
+    const userEntity = await this.validateCredentials(email, password);
+    return this.mapToAuthenticatedUser(userEntity);
+  }
+  public loginResponse(user: User): {
+    user: AuthenticatedUser;
+    accessToken: string;
+    refreshToken: string;
+  } {
+    // map entity → lightweight DTO
+    const authUser = this.mapToAuthenticatedUser(user);
+
+    // create both tokens
+    const { accessToken, refreshToken } = this.createTokens(authUser);
+
+    return { user: authUser, accessToken, refreshToken };
   }
 }

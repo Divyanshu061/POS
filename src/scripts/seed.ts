@@ -8,7 +8,8 @@ import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 import { Category } from '../inventory/category/entities/category.entity';
 import { Warehouse } from '../inventory/warehouse/entities/warehouse.entity';
-import { Supplier } from '../inventory/entities/supplier.entity';
+import { Supplier } from '../inventory/supplier/entities/supplier.entity';
+import { Company } from '../inventory/company/entities/company.entity';
 
 async function main() {
   // 1) Configure DataSource
@@ -19,7 +20,7 @@ async function main() {
     username: process.env.POSTGRES_USER,
     password: process.env.POSTGRES_PASSWORD,
     database: process.env.POSTGRES_DATABASE,
-    entities: [Role, Permission, Category, Warehouse, Supplier],
+    entities: [Role, Permission, Company, Category, Warehouse, Supplier],
     synchronize: true, // only in dev
     logging: false,
   });
@@ -98,7 +99,6 @@ async function main() {
       c = categoryRepo.create({
         name,
         companyId: defaultCompanyId,
-        // Use the relation property, not a raw FK column:
         parent: parent ? { id: parent } : undefined,
       });
       await categoryRepo.save(c);
