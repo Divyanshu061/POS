@@ -36,13 +36,11 @@ export class CreateProductDto {
   companyId!: string;
 
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  categoryId?: number;
+  @IsUUID()
+  categoryId?: string;
 
   // Keep only this one block for supplierId:
   @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  supplierId?: number;
+  @IsUUID()
+  supplierId?: string;
 }

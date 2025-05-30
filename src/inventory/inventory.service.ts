@@ -8,8 +8,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, LessThanOrEqual, DeepPartial } from 'typeorm';
 
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
+import { CreateProductDto } from './product/dto/create-product.dto';
+import { UpdateProductDto } from './product/dto/update-product.dto';
 import { AdjustStockDto, StockAction } from './dto/adjust-stock.dto';
 
 import { Product } from './product/entities/product.entity';
@@ -37,11 +37,16 @@ export class InventoryService {
     return this.productRepo.find();
   }
 
-  async findProductById(id: string): Promise<Product> {
+  private parseProductId(id: string): number {
     const productId = parseInt(id, 10);
     if (isNaN(productId)) {
       throw new BadRequestException(`Invalid product ID: ${id}`);
     }
+    return productId;
+  }
+
+  async findProductById(id: string): Promise<Product> {
+    const productId = this.parseProductId(id);
     const product = await this.productRepo.findOne({
       where: { id: productId },
     });
@@ -61,11 +66,9 @@ export class InventoryService {
       unitPrice: dto.unitPrice,
       companyId: dto.companyId, // string is fine here
       categoryId:
-        dto.categoryId !== undefined // string|undefined → number|undefined
-          ? Number(dto.categoryId)
-          : undefined,
+        dto.categoryId !== undefined ? String(dto.categoryId) : undefined,
       supplierId:
-        dto.supplierId !== undefined ? Number(dto.supplierId) : undefined,
+        dto.supplierId !== undefined ? String(dto.supplierId) : undefined,
     };
 
     const product = this.productRepo.create(partial);
@@ -73,10 +76,7 @@ export class InventoryService {
   }
 
   async updateProduct(id: string, dto: UpdateProductDto): Promise<Product> {
-    const productId = parseInt(id, 10);
-    if (isNaN(productId)) {
-      throw new BadRequestException(`Invalid product ID: ${id}`);
-    }
+    const productId = this.parseProductId(id);
     await this.findProductById(id);
 
     // same flattening for update
@@ -88,10 +88,10 @@ export class InventoryService {
       ...('unitPrice' in dto && { unitPrice: dto.unitPrice }),
       ...('companyId' in dto && { companyId: dto.companyId }),
       ...(dto.categoryId !== undefined && {
-        categoryId: Number(dto.categoryId),
+        categoryId: String(dto.categoryId),
       }),
       ...(dto.supplierId !== undefined && {
-        supplierId: Number(dto.supplierId),
+        supplierId: String(dto.supplierId),
       }),
     };
 
@@ -100,10 +100,7 @@ export class InventoryService {
   }
 
   async deleteProduct(id: string): Promise<void> {
-    const productId = parseInt(id, 10);
-    if (isNaN(productId)) {
-      throw new BadRequestException(`Invalid product ID: ${id}`);
-    }
+    const productId = this.parseProductId(id);
     const result = await this.productRepo.delete(productId);
     if (!result.affected) {
       throw new NotFoundException(`Product with ID ${productId} not found`);

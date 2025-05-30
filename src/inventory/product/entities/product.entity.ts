@@ -44,14 +44,14 @@ export class Product {
   // Foreign Keys (explicitly added for TypeORM query flexibility)
   // ----------------------------
 
-  @Column()
+  @Column('uuid')
   companyId!: string;
 
-  @Column({ nullable: true })
-  categoryId?: number;
+  @Column('uuid', { nullable: true })
+  categoryId?: string;
 
-  @Column({ nullable: true })
-  supplierId?: number;
+  @Column('uuid', { nullable: true })
+  supplierId?: string;
 
   // ----------------------------
   // Relations
