@@ -11,11 +11,13 @@ import {
   Query,
   UseGuards,
   ValidationPipe,
-  ParseUUIDPipe,
+  ParseIntPipe,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserId } from '../../auth/decorators/user-id.decorator';
 
 import { ProductService } from './product.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -38,11 +40,11 @@ export class ProductController {
   @Get(':id')
   @Roles('admin', 'store_manager', 'sales_rep')
   findOne(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Query('companyId', new ValidationPipe({ whitelist: true }))
     companyId: string,
   ) {
-    return this.svc.findOne(companyId, id);
+    return this.svc.findOne(companyId, id.toString());
   }
 
   @Post()
@@ -52,30 +54,41 @@ export class ProductController {
     dto: CreateProductDto,
     @Query('companyId', new ValidationPipe({ whitelist: true }))
     companyId: string,
+    @UserId() userId: string | null,
   ) {
-    // Pass companyId as first argument, dto second
-    return this.svc.create(companyId, dto);
+    if (!userId) {
+      throw new BadRequestException('Cannot determine user ID from token');
+    }
+    return this.svc.create(companyId, dto, userId);
   }
 
   @Patch(':id')
   @Roles('admin', 'store_manager')
   update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: UpdateProductDto,
     @Query('companyId', new ValidationPipe({ whitelist: true }))
     companyId: string,
+    @UserId() userId: string | null,
   ) {
-    return this.svc.update(companyId, id, dto);
+    if (!userId) {
+      throw new BadRequestException('Cannot determine user ID from token');
+    }
+    return this.svc.update(companyId, id.toString(), dto, userId);
   }
 
   @Delete(':id')
   @Roles('admin')
   remove(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Query('companyId', new ValidationPipe({ whitelist: true }))
     companyId: string,
+    @UserId() userId: string | null,
   ) {
-    return this.svc.remove(companyId, id);
+    if (!userId) {
+      throw new BadRequestException('Cannot determine user ID from token');
+    }
+    return this.svc.remove(companyId, id.toString(), userId);
   }
 }

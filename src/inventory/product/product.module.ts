@@ -9,7 +9,7 @@ import { ProductController } from './product.controller';
 
 // Import UserModule so authorization guards can inject the User repository
 import { UserModule } from '../../user/user.module';
-
+import { AuditLogModule } from '../audit-log/audit-log.module';
 /**
  * The ProductModule encapsulates all product-related logic:
  * - Registers the Product entity with TypeORM
@@ -21,7 +21,7 @@ import { UserModule } from '../../user/user.module';
   imports: [
     // Register Product repository for dependency injection
     TypeOrmModule.forFeature([Product]),
-
+    AuditLogModule,
     // Provide User repository in this module context (needed by RolesGuard)
     UserModule,
   ],

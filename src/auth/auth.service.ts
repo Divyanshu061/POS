@@ -136,11 +136,13 @@ export class AuthService {
   ): Promise<User> {
     // 1️⃣ Fetch the user _with_ password
     const user = await this.userService.findOneByEmailWithPassword(email);
+
     // 2️⃣ Check user existence
     if (!user) {
       this.logger.warn(`Login failed: no user for ${email}`);
       throw new UnauthorizedException(ERRORS.INVALID_CREDENTIALS);
     }
+
     // 3️⃣ Guard against a missing hash
     if (!user.password) {
       this.logger.error(
@@ -148,18 +150,14 @@ export class AuthService {
       );
       throw new UnauthorizedException('Password data is corrupt');
     }
-    // ←── Insert your debug log here ───────────────────────────
-    console.log({
-      passwordInput: password,
-      hash: user.password,
-    });
-    // ────────────────────────────────────────────────────────────→
+
     // 4️⃣ Now compare
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       this.logger.warn(`Login failed: wrong password for ${email}`);
       throw new UnauthorizedException(ERRORS.INVALID_CREDENTIALS);
     }
+
     // 5️⃣ All good—return the full user entity (with roles, etc.)
     return user;
   }
@@ -185,8 +183,8 @@ export class AuthService {
 
   private mapToAuthenticatedUser(user: User): AuthenticatedUser {
     return {
-      userId: user.id,
-      id: user.id,
+      userId: user.id, // the user’s UUID
+      id: user.id, // duplicate for convenience
       email: user.email,
       roles: (user.roles ?? [])
         .filter((r): r is Role => !!r && typeof r.name === 'string')
@@ -206,16 +204,25 @@ export class AuthService {
     accessToken: string;
     refreshToken: string;
   } {
-    const payload: JwtPayload = {
-      sub: user.userId,
+    // We now include both `sub` and `id` in the payload so that
+    // decorators reading request.user.id will succeed.
+    const accessPayload: JwtPayload = {
+      sub: user.userId, // Nest convention: “subject” is the user’s primary key
+      id: user.userId, // duplicate “id” for decorators (e.g. @UserId())
       email: user.email,
       roles: user.roles,
     };
 
+    const refreshPayload: JwtPayload = {
+      sub: user.userId,
+      id: user.userId,
+      // (no need for email/roles in the refresh token)
+    };
+
     return {
-      accessToken: this.signJwt(payload, this.jwtSecret, this.jwtExpiry),
+      accessToken: this.signJwt(accessPayload, this.jwtSecret, this.jwtExpiry),
       refreshToken: this.signJwt(
-        { sub: user.userId },
+        refreshPayload,
         this.jwtRefreshSecret,
         this.jwtRefreshExpiry,
       ),
@@ -227,6 +234,8 @@ export class AuthService {
   public async validateJwtPayload(
     payload: JwtPayload,
   ): Promise<AuthenticatedUser> {
+    // Because we signed the token with both `sub` and `id`,
+    // payload.sub is the user’s UUID.
     const userEntity = await this.userService.findOne(payload.sub);
     if (!userEntity) {
       this.logger.warn(`JWT validation failed: no user ${payload.sub}`);
@@ -242,6 +251,7 @@ export class AuthService {
     const userEntity = await this.validateCredentials(email, password);
     return this.mapToAuthenticatedUser(userEntity);
   }
+
   public loginResponse(user: User): {
     user: AuthenticatedUser;
     accessToken: string;

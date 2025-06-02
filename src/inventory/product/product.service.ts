@@ -1,3 +1,5 @@
+// src/inventory/product/product.service.ts
+
 import {
   Injectable,
   NotFoundException,
@@ -16,6 +18,8 @@ import {
 import { Product } from './entities/product.entity';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { CreateAuditLogDto } from '../audit-log/dto/create-audit-log.dto';
 
 @Injectable()
 export class ProductService {
@@ -24,18 +28,13 @@ export class ProductService {
   constructor(
     @InjectRepository(Product)
     private readonly repo: Repository<Product>,
+    private readonly audit: AuditLogService,
   ) {}
 
-  /**
-   * Base where condition for company-scoped queries
-   */
   private buildCompanyWhere(companyId: string): FindOptionsWhere<Product> {
     return { companyId };
   }
 
-  /**
-   * Parse integer ID or throw
-   */
   private parseNumericId(value: string, label = 'ID'): number {
     const parsed = Number(value);
     if (!Number.isInteger(parsed)) {
@@ -44,15 +43,10 @@ export class ProductService {
     return parsed;
   }
 
-  /**
-   * Map DTO into Entity Partial
-   */
   private mapDtoToEntity(
     dto: CreateProductDto | UpdateProductDto,
   ): DeepPartial<Product> {
     const partial: DeepPartial<Product> = {};
-
-    // Required or common fields
     if ('name' in dto && dto.name !== undefined) partial.name = dto.name;
     if ('sku' in dto && dto.sku !== undefined) partial.sku = dto.sku;
     if ('barcode' in dto) partial.barcode = dto.barcode;
@@ -61,16 +55,15 @@ export class ProductService {
       partial.unitPrice = dto.unitPrice;
 
     if ('categoryId' in dto && dto.categoryId !== undefined) {
-      // entity expects UUID string
       partial.categoryId = String(dto.categoryId);
     }
     if ('supplierId' in dto && dto.supplierId !== undefined) {
-      // entity expects UUID string
       partial.supplierId = String(dto.supplierId);
     }
 
     return partial;
   }
+
   private async generateUniqueBarcode(): Promise<string> {
     let barcode: string;
     let isUnique = false;
@@ -87,13 +80,17 @@ export class ProductService {
   }
 
   private generateBarcode(): string {
-    // Generate a random 12-digit numeric barcode string
     return Math.floor(Math.random() * 1_000_000_000_000)
       .toString()
       .padStart(12, '0');
   }
+
   /** Create a new product for a specific company */
-  async create(companyId: string, dto: CreateProductDto): Promise<Product> {
+  async create(
+    companyId: string,
+    dto: CreateProductDto,
+    userId?: string, // userId is optional, but if passed, must be UUID
+  ): Promise<Product> {
     if (!dto.barcode) {
       dto.barcode = await this.generateUniqueBarcode();
     }
@@ -103,6 +100,19 @@ export class ProductService {
     try {
       const saved = await this.repo.save(entity);
       this.logger.log(`Product created: ${saved.id} (Company: ${companyId})`);
+
+      // Only log if a valid userId (UUID) was provided
+      if (userId) {
+        await this.audit.log({
+          action: 'CREATE',
+          entity: 'product',
+          entityId: String(saved.id),
+          userId, // this must be a real UUID
+          changes: saved,
+          timestamp: new Date(),
+        } as CreateAuditLogDto);
+      }
+
       return saved;
     } catch (error) {
       this.logger.error(
@@ -147,6 +157,7 @@ export class ProductService {
     companyId: string,
     id: string,
     dto: UpdateProductDto,
+    userId?: string, // userId is optional
   ): Promise<Product> {
     const productId = this.parseNumericId(id, 'productId');
     await this.findOne(companyId, id);
@@ -158,6 +169,18 @@ export class ProductService {
       );
       const updated = await this.findOne(companyId, id);
       this.logger.log(`Product updated: ${updated.id}`);
+
+      if (userId) {
+        await this.audit.log({
+          action: 'UPDATE',
+          entity: 'product',
+          entityId: String(updated.id),
+          userId, // must be a real UUID
+          changes: dto,
+          timestamp: new Date(),
+        } as CreateAuditLogDto);
+      }
+
       return updated;
     } catch (error) {
       this.logger.error(
@@ -168,7 +191,11 @@ export class ProductService {
   }
 
   /** Delete a product by company + ID */
-  async remove(companyId: string, id: string): Promise<void> {
+  async remove(
+    companyId: string,
+    id: string,
+    userId?: string, // userId is optional
+  ): Promise<void> {
     const productId = this.parseNumericId(id, 'productId');
     try {
       const result = await this.repo.delete({
@@ -181,6 +208,17 @@ export class ProductService {
         );
       }
       this.logger.log(`Product deleted: ${productId}`);
+
+      if (userId) {
+        await this.audit.log({
+          action: 'DELETE',
+          entity: 'product',
+          entityId: String(productId),
+          userId, // must be a real UUID
+          changes: undefined,
+          timestamp: new Date(),
+        } as CreateAuditLogDto);
+      }
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       this.logger.error(

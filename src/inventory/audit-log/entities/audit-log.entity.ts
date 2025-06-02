@@ -21,7 +21,7 @@ export class AuditLog {
   @Column('varchar')
   entityId!: string;
 
-  @Column('uuid')
+  @Column('uuid', { nullable: true })
   userId!: string; // who performed the action
 
   @Column('json', { nullable: true })
