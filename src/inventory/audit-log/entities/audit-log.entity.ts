@@ -18,7 +18,7 @@ export class AuditLog {
   @Column()
   entity!: string; // e.g. "Product", "Sale"
 
-  @Column('uuid')
+  @Column('varchar')
   entityId!: string;
 
   @Column('uuid')
