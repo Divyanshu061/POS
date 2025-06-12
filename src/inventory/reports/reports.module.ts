@@ -12,5 +12,6 @@ import { ReportsController } from './reports.controller';
   imports: [StockLevelModule, PurchaseModule, SalesModule],
   providers: [ReportsService],
   controllers: [ReportsController],
+  exports: [ReportsService], // optional: export for use in dashboards etc.
 })
 export class ReportsModule {}
