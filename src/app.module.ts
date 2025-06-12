@@ -1,5 +1,3 @@
-// src/app.module.ts
-
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
@@ -12,6 +10,7 @@ import { RolesModule } from './roles/roles.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { TransactionModule } from './inventory/transaction/transaction.module';
+import { SalesModule } from './inventory/sales/sales.module';
 
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -60,6 +59,7 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
     PermissionsModule,
     InventoryModule,
     TransactionModule,
+    SalesModule,
 
     // ─── 5) StockLevel & Notification modules (so they can inject MailerService) ─
     StockLevelModule,

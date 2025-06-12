@@ -7,6 +7,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   JoinColumn,
+  UpdateDateColumn,
 } from 'typeorm';
 import { Product } from '../../product/entities/product.entity';
 import { Warehouse } from '../../warehouse/entities/warehouse.entity';
@@ -16,7 +17,7 @@ export class Sale {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @ManyToOne(() => Warehouse, { nullable: false })
+  @ManyToOne(() => Warehouse, { nullable: false, eager: true })
   @JoinColumn({ name: 'warehouseId' })
   warehouse!: Warehouse;
 
@@ -41,4 +42,7 @@ export class Sale {
 
   @CreateDateColumn()
   soldAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

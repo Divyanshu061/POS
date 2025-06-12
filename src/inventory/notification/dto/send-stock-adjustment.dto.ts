@@ -1,4 +1,11 @@
-import { IsEmail, IsString, IsInt, Min, IsOptional, IsIn } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  IsInt,
+  Min,
+  IsOptional,
+  IsIn,
+} from 'class-validator';
 
 export class SendStockAdjustmentDto {
   @IsEmail({}, { message: 'email must be a valid email address' })
