@@ -19,9 +19,9 @@ export class StockLevel {
   id!: string;
 
   // ─── Foreign Key: Product ───────────────────────────────────────────────
-  @Column({ type: 'uuid' })
+  @Column({ type: 'int' })
   @Index()
-  productId!: string;
+  productId!: number;
 
   @ManyToOne(() => Product, (p) => p.stockLevels, {
     eager: true,

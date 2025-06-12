@@ -120,11 +120,11 @@ export class StockLevelService {
    */
   async getStockLevel(
     companyId: string,
-    productId: string,
+    productId: number,
     warehouseId: string,
   ): Promise<StockLevel> {
     const sl = await this.stockLevelRepo.findOne({
-      where: { productId, warehouseId },
+      where: { productId, warehouseId, companyId },
     });
 
     if (!sl) {
@@ -155,7 +155,7 @@ export class StockLevelService {
     });
 
     // 2) Collect productIds that already have a low-stock entry
-    const existingProductIds = new Set<string>(
+    const existingProductIds = new Set<number>(
       lowStockLevels.map((sl: StockLevel) => sl.productId),
     );
 

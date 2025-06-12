@@ -1,3 +1,5 @@
+// src/inventory/purchase/purchase.service.ts
+
 import {
   Injectable,
   NotFoundException,
@@ -9,6 +11,10 @@ import { Purchase } from './entities/purchase.entity';
 import { Product } from '../product/entities/product.entity';
 import { CreatePurchaseDto, UpdatePurchaseDto } from './dto';
 
+// ← import TransactionService & type enum
+import { TransactionService } from '../transaction/transaction.service';
+import { TransactionType } from '../transaction/entities/transaction.entity';
+
 @Injectable()
 export class PurchaseService {
   constructor(
@@ -17,12 +23,14 @@ export class PurchaseService {
 
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+
+    private readonly txService: TransactionService, // ← injected
   ) {}
 
   async create(dto: CreatePurchaseDto): Promise<Purchase> {
     const purchaseData: DeepPartial<Purchase> = {
       supplierId: dto.supplierId,
-      productId: Number(dto.productId),
+      productId: dto.productId,
       quantity: dto.quantity,
       unitCost: dto.unitCost,
       companyId: dto.companyId,
@@ -44,6 +52,16 @@ export class PurchaseService {
 
     product.quantity = (product.quantity || 0) - saved.quantity;
     await this.productRepo.save(product);
+
+    // 2) Automatically record a stock‐IN transaction
+    await this.txService.create({
+      productId: saved.productId,
+      warehouseId: dto.warehouseId,
+      type: TransactionType.IN,
+      quantity: saved.quantity,
+      reference: `Purchase#${saved.id}`,
+      companyId: dto.companyId,
+    });
 
     return saved;
   }

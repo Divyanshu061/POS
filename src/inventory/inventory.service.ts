@@ -115,7 +115,7 @@ export class InventoryService {
 
     return this.dataSource.transaction(async (manager) => {
       const tx = manager.create(Transaction, {
-        productId: dto.productId,
+        productId: parseInt(dto.productId, 10),
         warehouseId: dto.warehouseId,
         companyId: dto.companyId,
         type: txType,
@@ -126,14 +126,14 @@ export class InventoryService {
 
       let sl = await manager.findOne(StockLevel, {
         where: {
-          productId: dto.productId,
+          productId: parseInt(dto.productId, 10),
           warehouseId: dto.warehouseId,
           companyId: dto.companyId,
         },
       });
       if (!sl) {
         sl = manager.create(StockLevel, {
-          productId: dto.productId,
+          productId: parseInt(dto.productId, 10),
           warehouseId: dto.warehouseId,
           companyId: dto.companyId,
           quantity: 0,
@@ -158,7 +158,7 @@ export class InventoryService {
   getStockLevel(productId: string, warehouseId: string): Promise<StockLevel> {
     return this.stockRepo.findOneOrFail({
       where: {
-        productId,
+        productId: parseInt(productId, 10),
         warehouseId,
       },
     });

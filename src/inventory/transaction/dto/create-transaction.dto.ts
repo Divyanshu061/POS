@@ -15,7 +15,7 @@ export enum TransactionType {
 }
 
 export class CreateTransactionDto {
-  @IsUUID() productId!: string;
+  @IsInt() productId!: number;
   @IsUUID() warehouseId!: string;
   @IsEnum(TransactionType) type!: TransactionType;
   @IsInt() @Min(1) quantity!: number;

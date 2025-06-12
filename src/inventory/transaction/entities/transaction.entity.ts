@@ -37,8 +37,8 @@ export class Transaction {
   company!: Company;
 
   /** Reference to the Product */
-  @Column({ type: 'uuid' })
-  productId!: string;
+  @Column({ type: 'int' })
+  productId!: number;
 
   @ManyToOne(() => Product, (product) => product.transactions, {
     eager: true,

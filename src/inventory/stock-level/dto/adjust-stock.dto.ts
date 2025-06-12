@@ -14,8 +14,8 @@ export class AdjustStockDto {
   /**
    * ID of the product to be adjusted
    */
-  @IsUUID()
-  productId!: string;
+  @IsInt()
+  productId!: number;
 
   /**
    * ID of the warehouse where the stock is stored

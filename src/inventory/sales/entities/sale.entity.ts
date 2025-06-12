@@ -9,18 +9,26 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Product } from '../../product/entities/product.entity';
+import { Warehouse } from '../../warehouse/entities/warehouse.entity';
 
 @Entity()
 export class Sale {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @ManyToOne(() => Warehouse, { nullable: false })
+  @JoinColumn({ name: 'warehouseId' })
+  warehouse!: Warehouse;
+
+  @Column('uuid')
+  warehouseId!: string;
+
   @ManyToOne(() => Product, (p) => p.id, { nullable: false })
   @JoinColumn({ name: 'productId' })
   product!: Product;
 
-  @Column('uuid')
-  productId!: string;
+  @Column('int') // 🔄 changed from 'uuid'
+  productId!: number;
 
   @Column('int')
   quantity!: number;

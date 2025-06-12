@@ -2,7 +2,7 @@
 import { IsUUID, IsInt, Min } from 'class-validator';
 
 export class CreateStockLevelDto {
-  @IsUUID() productId!: string;
+  @IsInt() productId!: number;
   @IsUUID() warehouseId!: string;
   @IsInt() @Min(0) quantity!: number;
   @IsUUID() companyId!: string;

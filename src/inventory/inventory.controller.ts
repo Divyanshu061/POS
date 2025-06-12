@@ -144,7 +144,7 @@ export class InventoryController {
   getStockLevel(
     @Company() companyId: string,
     @Param('productId', new ParseUUIDPipe({ errorHttpStatusCode: 400 }))
-    productId: string,
+    productId: number,
     @Param('warehouseId', new ParseUUIDPipe({ errorHttpStatusCode: 400 }))
     warehouseId: string,
   ): Promise<StockLevel> {
