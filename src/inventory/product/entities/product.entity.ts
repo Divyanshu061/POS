@@ -11,6 +11,7 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
+
 import { Category } from '../../category/entities/category.entity';
 import { StockLevel } from '../../stock-level/entities/stock-level.entity';
 import { Transaction } from '../../transaction/entities/transaction.entity';
@@ -23,15 +24,15 @@ export class Product {
   id!: number;
 
   @Column()
-  @Index() // For faster search
+  @Index()
   name!: string;
 
   @Column({ unique: true })
-  @Index({ unique: true }) // Ensures fast lookup & avoids duplicates
+  @Index({ unique: true })
   sku!: string;
 
   @Column({ nullable: true })
-  @Index() // Useful if you scan or lookup by barcode
+  @Index()
   barcode?: string;
 
   @Column('text', { nullable: true })
@@ -40,10 +41,19 @@ export class Product {
   @Column('decimal', { precision: 10, scale: 2, default: 0 })
   unitPrice!: number;
 
-  // ----------------------------
-  // Foreign Keys (explicitly added for TypeORM query flexibility)
-  // ----------------------------
+  /**
+   * Optional additional product info
+   */
+  @Column({ nullable: true })
+  productNumber?: string;
 
+  @Column({ nullable: true })
+  unit?: string; // e.g. 'pcs', 'kg', 'litre', etc.
+
+  @Column('int', { default: 0 })
+  quantity!: number;
+
+  // ─────── Foreign Key Fields ───────
   @Column('uuid')
   companyId!: string;
 
@@ -53,15 +63,11 @@ export class Product {
   @Column('uuid', { nullable: true })
   supplierId?: string;
 
-  // ----------------------------
-  // Relations
-  // ----------------------------
-
+  // ─────── Relations ───────
   @ManyToOne(() => Company, (company) => company.products, {
     onDelete: 'CASCADE',
-    nullable: false,
   })
-  @JoinColumn({ name: 'companyId' }) // maps to companyId column
+  @JoinColumn({ name: 'companyId' })
   company!: Company;
 
   @ManyToOne(() => Category, (category) => category.products, {
@@ -84,10 +90,7 @@ export class Product {
   @OneToMany(() => Transaction, (transaction) => transaction.product)
   transactions!: Transaction[];
 
-  // ----------------------------
-  // Audit Fields
-  // ----------------------------
-
+  // ─────── Audit ───────
   @CreateDateColumn()
   createdAt!: Date;
 

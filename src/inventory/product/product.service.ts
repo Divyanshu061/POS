@@ -54,6 +54,12 @@ export class ProductService {
     if ('unitPrice' in dto && dto.unitPrice !== undefined)
       partial.unitPrice = dto.unitPrice;
 
+    if ('productNumber' in dto && dto.productNumber !== undefined)
+      partial.productNumber = dto.productNumber;
+    if ('unit' in dto && dto.unit !== undefined) partial.unit = dto.unit;
+    if ('quantity' in dto && dto.quantity !== undefined)
+      partial.quantity = dto.quantity;
+
     if ('categoryId' in dto && dto.categoryId !== undefined) {
       partial.categoryId = String(dto.categoryId);
     }

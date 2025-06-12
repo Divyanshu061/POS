@@ -8,29 +8,50 @@ import {
   IsNumber,
   IsUUID,
   Min,
+  MaxLength,
 } from 'class-validator';
 
 export class CreateProductDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   name!: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(100)
   sku!: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   barcode?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   description?: string;
 
   @Type(() => Number)
-  @IsNumber()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   unitPrice!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  productNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  unit?: string; // e.g., pcs, kg, litre
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  quantity?: number;
 
   @IsUUID()
   companyId!: string;
@@ -39,7 +60,6 @@ export class CreateProductDto {
   @IsUUID()
   categoryId?: string;
 
-  // Keep only this one block for supplierId:
   @IsOptional()
   @IsUUID()
   supplierId?: string;

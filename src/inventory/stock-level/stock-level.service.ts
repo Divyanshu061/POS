@@ -6,9 +6,17 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, LessThanOrEqual } from 'typeorm';
+import {
+  Repository,
+  DataSource,
+  LessThanOrEqual,
+  Not,
+  In,
+  FindOptionsWhere,
+} from 'typeorm';
 
 import { StockLevel } from './entities/stock-level.entity';
+import { Product } from '../product/entities/product.entity';
 import { CreateStockLevelDto } from './dto/create-stock-level.dto';
 import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
@@ -25,6 +33,9 @@ export class StockLevelService {
 
     @InjectRepository(StockLevel)
     private readonly stockLevelRepo: Repository<StockLevel>,
+
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
   ) {}
 
   // ─── CRUD ──────────────────────────────
@@ -53,7 +64,7 @@ export class StockLevelService {
     await this.stockLevelRepo.delete(id);
   }
 
-  // ─── STOCK FEATURES ──────────────────────────────
+  // ─── STOCK FEATURES ────────────────────
 
   /**
    * Adjust stock by creating a Transaction record AND updating StockLevel,
@@ -63,13 +74,12 @@ export class StockLevelService {
     const { productId, warehouseId, companyId, type, quantity, reference } =
       dto;
 
-    // 1) enum‐safety check
     if (!Object.values(TransactionType).includes(type)) {
       throw new BadRequestException(`Unknown transaction type "${type}"`);
     }
 
     return this.dataSource.transaction(async (manager) => {
-      // 2) create & save Transaction
+      // 1) create & save Transaction
       const tx = manager.create(Transaction, {
         productId,
         warehouseId,
@@ -80,7 +90,7 @@ export class StockLevelService {
       });
       await manager.save(tx);
 
-      // 3) fetch or create StockLevel
+      // 2) fetch or create StockLevel
       let sl = await manager.findOne(StockLevel, {
         where: { productId, warehouseId, companyId },
       });
@@ -93,14 +103,14 @@ export class StockLevelService {
         });
       }
 
-      // 4) adjust quantity
+      // 3) adjust quantity
       if (type === TransactionType.IN) {
         sl.quantity += quantity;
-      } /* OUT */ else {
+      } else {
         sl.quantity -= quantity;
       }
 
-      // 5) save & return
+      // 4) save & return
       return manager.save(sl);
     });
   }
@@ -126,18 +136,53 @@ export class StockLevelService {
   }
 
   /**
-   * Low-stock report: all entries at or below threshold.
+   * Low-stock report:
+   * 1) return all StockLevel rows where quantity ≤ threshold
+   * 2) also return any Products (for this company) whose own product.quantity ≤ threshold
+   *    but have no corresponding StockLevel row already returned
    */
   async lowStockReport(
     companyId: string,
     threshold = 10,
-  ): Promise<StockLevel[]> {
-    return this.stockLevelRepo.find({
+  ): Promise<(StockLevel | { product: Product; warehouse: null })[]> {
+    // 1) Find all stock levels at or below threshold
+    const lowStockLevels: StockLevel[] = await this.stockLevelRepo.find({
       where: {
         companyId,
         quantity: LessThanOrEqual(threshold),
       },
       relations: ['product', 'warehouse'],
     });
+
+    // 2) Collect productIds that already have a low-stock entry
+    const existingProductIds = new Set<string>(
+      lowStockLevels.map((sl: StockLevel) => sl.productId),
+    );
+
+    // 3) Build where-clause for products whose own quantity ≤ threshold
+    const productWhere: FindOptionsWhere<Product> = {
+      companyId,
+      quantity: LessThanOrEqual(threshold),
+    };
+    if (existingProductIds.size > 0) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      productWhere.id = Not(In(Array.from(existingProductIds))) as any;
+    }
+
+    // 4) Fetch those products
+    const lowByProduct: Product[] = await this.productRepo.find({
+      where: productWhere,
+      relations: ['category', 'supplier'],
+    });
+
+    // 5) Map to fallback entries (warehouse: null)
+    const fallbackEntries: { product: Product; warehouse: null }[] =
+      lowByProduct.map((p: Product) => ({
+        product: p,
+        warehouse: null,
+      }));
+
+    // 6) Return combined list
+    return [...lowStockLevels, ...fallbackEntries];
   }
 }

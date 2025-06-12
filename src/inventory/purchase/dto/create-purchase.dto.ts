@@ -4,7 +4,7 @@ import { IsUUID, IsInt, Min, IsNumber } from 'class-validator';
 
 export class CreatePurchaseDto {
   @IsUUID() supplierId!: string;
-  @IsUUID() productId!: string;
+  @IsInt() productId!: number;
   @IsInt() @Min(1) quantity!: number;
   @IsNumber() unitCost!: number;
   @IsUUID() companyId!: string;

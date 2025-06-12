@@ -20,7 +20,7 @@
     "declaration": true,                                      /* Generate declaration files (.d.ts) */
     "sourceMap": true                                         /* Enable source maps */
   },
-  "include": ["src/**/*"],                                   /* Include all files in the src folder */
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]                          /* Exclude node_modules and dist folders */
 }
 

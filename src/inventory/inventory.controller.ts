@@ -1,4 +1,5 @@
 // src/inventory/inventory.controller.ts
+
 import {
   Controller,
   Get,
@@ -29,13 +30,14 @@ import { AdjustStockDto } from './stock-level/dto/adjust-stock.dto';
 
 import { Product } from './product/entities/product.entity';
 import { StockLevel } from './stock-level/entities/stock-level.entity';
+import { LowStockEntry } from './stock-level/types';
 
 /**
  * InventoryController exposes endpoints for products, stock management, and reports:
  * - Product CRUD
  * - Stock adjustments and queries
- * - Low stock reporting
- * All routes are secured by JWT authentication and role-based access.
+ * - Low‐stock reporting
+ * All routes are secured by JWT authentication and role‐based access.
  */
 @Controller('inventory')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -152,8 +154,8 @@ export class InventoryController {
   // ─── Reports ─────────────────────────────────────────────────────
 
   /**
-   * Generate low stock report
-   * GET /inventory/reports/low-stock?threshold=10
+   * Generate low‐stock report
+   * GET /inventory/reports/low‐stock?threshold=10
    */
   @Get('reports/low-stock')
   @Roles('admin', 'store_manager', 'warehouse_staff')
@@ -161,7 +163,7 @@ export class InventoryController {
     @Company() companyId: string,
     @Query('threshold', new DefaultValuePipe(10), ParseIntPipe)
     threshold: number,
-  ): Promise<StockLevel[]> {
+  ): Promise<LowStockEntry[]> {
     return this.reportsSvc.lowStockReport(companyId, threshold);
   }
 }

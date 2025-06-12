@@ -21,6 +21,15 @@ import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 export class StockLevelController {
   constructor(private readonly svc: StockLevelService) {}
 
+  @Get('/low-stock')
+  @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
+  lowStock(
+    @Query('companyId') companyId: string,
+    @Query('threshold') threshold?: string,
+  ) {
+    const parsedThreshold = threshold ? parseInt(threshold, 10) : 10;
+    return this.svc.lowStockReport(companyId, parsedThreshold);
+  }
   @Get()
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
   findAll(@Query('companyId') companyId: string) {

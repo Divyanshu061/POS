@@ -7,7 +7,6 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
-  RelationId,
 } from 'typeorm';
 import { Product } from '../../product/entities/product.entity';
 import { Warehouse } from '../../warehouse/entities/warehouse.entity';
@@ -19,7 +18,7 @@ export class StockLevel {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  /** Foreign key column for product */
+  // ─── Foreign Key: Product ───────────────────────────────────────────────
   @Column({ type: 'uuid' })
   @Index()
   productId!: string;
@@ -31,7 +30,7 @@ export class StockLevel {
   @JoinColumn({ name: 'productId' })
   product!: Product;
 
-  /** Foreign key column for warehouse */
+  // ─── Foreign Key: Warehouse ─────────────────────────────────────────────
   @Column({ type: 'uuid' })
   @Index()
   warehouseId!: string;
@@ -43,7 +42,7 @@ export class StockLevel {
   @JoinColumn({ name: 'warehouseId' })
   warehouse!: Warehouse;
 
-  /** Multi-tenant identifier */
+  // ─── Foreign Key: Company (Multi-Tenant Support) ────────────────────────
   @Column({ type: 'uuid' })
   @Index()
   companyId!: string;
@@ -54,25 +53,17 @@ export class StockLevel {
   @JoinColumn({ name: 'companyId' })
   company!: Company;
 
-  /** Current quantity on hand */
+  // ─── Inventory Fields ───────────────────────────────────────────────────
   @Column('int', { default: 0 })
   quantity!: number;
 
-  /** When this record was created */
+  @Column('int', { default: 10 })
+  reorderLevel!: number;
+
+  // ─── Audit Fields ───────────────────────────────────────────────────────
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 
-  /** When this record was last updated */
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt!: Date;
-
-  /** RelationId shortcuts for lightweight access */
-  @RelationId((sl: StockLevel) => sl.product)
-  readonly productIdRelation!: string;
-
-  @RelationId((sl: StockLevel) => sl.warehouse)
-  readonly warehouseIdRelation!: string;
-
-  @RelationId((sl: StockLevel) => sl.company)
-  readonly companyIdRelation!: string;
 }
