@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { APP_GUARD, APP_PIPE } from '@nestjs/core';
@@ -20,10 +20,12 @@ import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import { join } from 'path';
 
-// Import your in-inventory modules (all lowercase “notification”)
+// ─── New for Audit Logging ─────────────────────────────
+import { AuditMiddleware } from './inventory/audit-log/middleware/audit.middleware';
+import { AuditLogModule } from './inventory/audit-log/audit-log.module';
+
 import { NotificationModule } from './inventory/notification/notification.module';
 import { StockLevelModule } from './inventory/stock-level/stock-level.module';
-
 @Module({
   imports: [
     // ─── 1) Env variables ───────────────────────────────────────────────
@@ -84,7 +86,7 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
         },
         template: {
           // At runtime: __dirname → dist/, so this points to <project-root>/templates/email
-          dir: join(__dirname, 'emails'),
+          dir: join(__dirname, '..', 'emails'),
           adapter: new HandlebarsAdapter(),
           options: {
             strict: true,
@@ -92,6 +94,8 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
         },
       }),
     }),
+    // ─── Audit Log Module ───────────────────────
+    AuditLogModule,
   ],
   providers: [
     // ─── Global validation pipe for all incoming DTOs ───────────────────
@@ -110,4 +114,8 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
     { provide: APP_GUARD, useClass: RolesGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(AuditMiddleware).forRoutes('*'); // ✅ Apply globally
+  }
+}

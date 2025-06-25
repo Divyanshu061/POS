@@ -9,11 +9,13 @@ import { SalesService } from './sales.service';
 import { SalesController } from './sales.controller';
 
 import { TransactionModule } from '../transaction/transaction.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Sale, Product]), // registers the Sale repository
     TransactionModule,
+    AuditLogModule,
   ],
   providers: [SalesService],
   controllers: [SalesController],

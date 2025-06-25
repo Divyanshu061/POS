@@ -13,6 +13,7 @@ import { PurchaseModule } from './purchase/purchase.module';
 import { SalesModule } from './sales/sales.module';
 import { ReportsModule } from './reports/reports.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
+import { NotificationModule } from './notification/notification.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
     SalesModule,
     ReportsModule,
     AuditLogModule,
+    NotificationModule,
   ],
 })
 export class InventoryModule {}

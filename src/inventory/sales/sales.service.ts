@@ -15,6 +15,7 @@ import { UpdateSaleDto } from './dto/update-sale.dto';
 import { TransactionService } from '../transaction/transaction.service';
 import { TransactionType } from '../transaction/entities/transaction.entity';
 import { Product } from '../product/entities/product.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 @Injectable()
 export class SalesService {
@@ -26,27 +27,45 @@ export class SalesService {
     private readonly productRepo: Repository<Product>, // ← inject Product repo
 
     private readonly txService: TransactionService,
+
+    private readonly audit: AuditLogService,
   ) {}
 
-  async create(dto: CreateSaleDto): Promise<Sale> {
-    // 1) Check product existence and quantity
+  /**
+   * Creates a sale and logs the stock change.
+   * @param dto sale data
+   * @param userId ID of the user performing the sale (injected via @CurrentUser())
+   */
+
+  async create(dto: CreateSaleDto, userId: string): Promise<Sale> {
+    // 1) Check product existence and stock
     const product = await this.productRepo.findOne({
       where: { id: dto.productId },
     });
-
     if (!product) {
       throw new NotFoundException(`Product ${dto.productId} not found`);
     }
-
-    if ((product.quantity || 0) < dto.quantity) {
+    if ((product.quantity ?? 0) < dto.quantity) {
       throw new BadRequestException(
         `Insufficient stock for product ${dto.productId}`,
       );
     }
 
     // 2) Decrease product quantity
+    const oldQuantity = product.quantity;
     product.quantity -= dto.quantity;
     await this.productRepo.save(product);
+
+    // 2a) Log the stock‐out update
+    await this.audit.log({
+      action: 'UPDATE',
+      entity: 'product',
+      entityId: product.id.toString(),
+      userId,
+      changes: {
+        quantity: { before: oldQuantity, after: product.quantity },
+      },
+    });
 
     // 3) Save the sale record
     const sale = this.saleRepo.create({ ...dto });

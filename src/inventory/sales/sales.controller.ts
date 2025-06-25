@@ -14,6 +14,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { SalesService } from './sales.service';
 import { CreateSaleDto, UpdateSaleDto } from './dto';
 
@@ -36,8 +37,12 @@ export class SalesController {
 
   @Post()
   @Roles('admin', 'store_manager', 'sales_rep')
-  create(@Body() dto: CreateSaleDto) {
-    return this.svc.create(dto);
+  create(
+    @Body() dto: CreateSaleDto,
+    @CurrentUser() user: { userId: string }, // ← get user from JWT
+  ) {
+    // now pass user.userId as second argument
+    return this.svc.create(dto, user.userId);
   }
 
   @Patch(':id')
