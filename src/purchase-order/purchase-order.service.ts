@@ -9,9 +9,11 @@ import { Repository, DataSource } from 'typeorm';
 import { PurchaseOrder } from './entities/purchase-order.entity';
 import { PurchaseOrderItem } from './entities/purchase-order-item.entity';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
+import { ReceivePurchaseOrderDto } from './dto/receive-purchase-order.dto';
 
 import { Supplier } from '../inventory/supplier/entities/supplier.entity';
 import { Warehouse } from '../inventory/warehouse/entities/warehouse.entity';
+import { StockLevel } from '../inventory/stock-level/entities/stock-level.entity';
 import { Product } from '../inventory/product/entities/product.entity';
 
 import { generateOrderNumber } from '../common/utils/generate-order-number';
@@ -23,22 +25,16 @@ export class PurchaseOrderService {
   constructor(
     @InjectRepository(PurchaseOrder)
     private readonly poRepo: Repository<PurchaseOrder>,
-
-    @InjectRepository(PurchaseOrderItem)
-    private readonly itemRepo: Repository<PurchaseOrderItem>,
-
     @InjectRepository(Supplier)
     private readonly supplierRepo: Repository<Supplier>,
-
     @InjectRepository(Warehouse)
     private readonly warehouseRepo: Repository<Warehouse>,
-
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
-
     private readonly dataSource: DataSource,
   ) {}
 
+  // Create a new PO
   async createPurchaseOrder(
     dto: CreatePurchaseOrderDto,
     user: User,
@@ -62,7 +58,6 @@ export class PurchaseOrderService {
     if (!warehouse) throw new NotFoundException('Warehouse not found');
 
     const orderNumber = await generateOrderNumber('PO', this.poRepo);
-
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -70,8 +65,8 @@ export class PurchaseOrderService {
     try {
       let totalAmount = 0;
 
-      // ✅ FIX: Explicit cast to avoid TS2769
-      const purchaseOrder: PurchaseOrder = this.poRepo.create({
+      // Create and save PO
+      const purchaseOrder = queryRunner.manager.create(PurchaseOrder, {
         orderNumber,
         supplier,
         warehouse,
@@ -81,46 +76,145 @@ export class PurchaseOrderService {
         createdBy: user,
         totalAmount: 0,
       });
-
       const savedPurchaseOrder = await queryRunner.manager.save(purchaseOrder);
 
+      // Create PO items
       const poItems: PurchaseOrderItem[] = [];
-
-      for (const item of items) {
+      for (const itemDto of items) {
         const product = await this.productRepo.findOne({
-          where: { id: +item.productId },
+          where: { id: +itemDto.productId },
         });
+        if (!product)
+          throw new NotFoundException(
+            `Product not found: ${itemDto.productId}`,
+          );
 
-        if (!product) {
-          throw new NotFoundException(`Product not found: ${item.productId}`);
-        }
-
-        const itemTotal = item.quantity * item.unitPrice;
+        const itemTotal = itemDto.quantity * itemDto.unitPrice;
         totalAmount += itemTotal;
 
-        const poItem = this.itemRepo.create({
-          purchaseOrder: savedPurchaseOrder, // ✅ FIX: make sure this is a single PO object
+        const poItem = queryRunner.manager.create(PurchaseOrderItem, {
+          purchaseOrder: savedPurchaseOrder,
           product,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
+          quantity: itemDto.quantity,
+          unitPrice: itemDto.unitPrice,
           receivedQty: 0,
-        } as Partial<PurchaseOrderItem>); // <-- helpful for strict TS
-
+        });
         poItems.push(poItem);
       }
 
-      await queryRunner.manager.save(PurchaseOrderItem, poItems);
-      // ✅ FIX: update totalAmount
+      await queryRunner.manager.save(poItems);
       savedPurchaseOrder.totalAmount = totalAmount;
-      await queryRunner.manager.save(PurchaseOrder, savedPurchaseOrder);
+      await queryRunner.manager.save(savedPurchaseOrder);
 
       await queryRunner.commitTransaction();
       return savedPurchaseOrder;
-    } catch (error) {
+    } catch (error: unknown) {
       await queryRunner.rollbackTransaction();
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Unknown error',
-      );
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(message);
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  // List all POs
+  async findAll(): Promise<PurchaseOrder[]> {
+    return this.poRepo.find({
+      relations: [
+        'supplier',
+        'warehouse',
+        'createdBy',
+        'items',
+        'items.product',
+      ],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  // Retrieve a single PO by ID
+  async findOne(id: string): Promise<PurchaseOrder> {
+    const po = await this.poRepo.findOne({
+      where: { id },
+      relations: [
+        'supplier',
+        'warehouse',
+        'createdBy',
+        'items',
+        'items.product',
+      ],
+    });
+    if (!po) throw new NotFoundException(`PurchaseOrder not found: ${id}`);
+    return po;
+  }
+
+  // Receive goods (partial/full) and update status/inventory
+  async receiveGoods(
+    id: string,
+    receiveDto: ReceivePurchaseOrderDto,
+  ): Promise<PurchaseOrder> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const po = await queryRunner.manager.findOne(PurchaseOrder, {
+        where: { id },
+        relations: ['items', 'items.product', 'supplier', 'warehouse'],
+      });
+      if (!po) throw new NotFoundException(`PurchaseOrder not found: ${id}`);
+
+      for (const { itemId, receivedQty } of receiveDto.items) {
+        const poItem = po.items.find((item) => item.id === itemId);
+        if (!poItem)
+          throw new NotFoundException(`PO item not found: ${itemId}`);
+
+        const newReceived = poItem.receivedQty + receivedQty;
+        if (receivedQty <= 0 || newReceived > poItem.quantity) {
+          throw new BadRequestException(
+            `Invalid receive quantity for item ${itemId}`,
+          );
+        }
+
+        poItem.receivedQty = newReceived;
+        await queryRunner.manager.save(poItem);
+
+        // Adjust warehouse stock level
+        let stockLevel = await queryRunner.manager.findOne(StockLevel, {
+          where: {
+            warehouse: { id: po.warehouse.id },
+            product: { id: poItem.product.id },
+          },
+          relations: ['warehouse', 'product'],
+        });
+        if (!stockLevel) {
+          stockLevel = queryRunner.manager.create(StockLevel, {
+            warehouse: po.warehouse,
+            product: poItem.product,
+            quantity: 0,
+          });
+        }
+        stockLevel.quantity += receivedQty;
+        await queryRunner.manager.save(stockLevel);
+      }
+
+      const allReceived = po.items.every((i) => i.receivedQty === i.quantity);
+      po.status = allReceived
+        ? PurchaseOrderStatus.RECEIVED
+        : PurchaseOrderStatus.PARTIALLY_RECEIVED;
+
+      const updatedPo = await queryRunner.manager.save(po);
+      await queryRunner.commitTransaction();
+      return updatedPo;
+    } catch (error: unknown) {
+      await queryRunner.rollbackTransaction();
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new BadRequestException(message);
     } finally {
       await queryRunner.release();
     }

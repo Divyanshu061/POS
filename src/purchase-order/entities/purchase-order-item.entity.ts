@@ -21,6 +21,9 @@ export class PurchaseOrderItem {
   @JoinColumn({ name: 'product_id' })
   product!: Product;
 
+  @Column()
+  productId!: number;
+
   @Column('int')
   quantity!: number;
 

@@ -12,6 +12,8 @@ import { InventoryModule } from './inventory/inventory.module';
 import { TransactionModule } from './inventory/transaction/transaction.module';
 import { SalesModule } from './inventory/sales/sales.module';
 
+import { PurchaseOrderModule } from './purchase-order/purchase-order.module';
+
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { User } from './entities/user.entity';
@@ -62,6 +64,7 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
     InventoryModule,
     TransactionModule,
     SalesModule,
+    PurchaseOrderModule,
 
     // ─── 5) StockLevel & Notification modules (so they can inject MailerService) ─
     StockLevelModule,

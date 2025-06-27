@@ -1,3 +1,5 @@
+//src/common/utils/generate-order-number.ts
+
 import { Repository, FindOptionsOrder } from 'typeorm';
 
 interface HasOrderMetadata {
