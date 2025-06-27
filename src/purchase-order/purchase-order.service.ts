@@ -94,9 +94,11 @@ export class PurchaseOrderService {
 
         const poItem = queryRunner.manager.create(PurchaseOrderItem, {
           purchaseOrder: savedPurchaseOrder,
-          product,
+          purchaseOrderId: savedPurchaseOrder.id,
+          product: product,
+          productId: product.id,
           quantity: itemDto.quantity,
-          unitPrice: itemDto.unitPrice,
+          unitPrice: itemDto.unitPrice.toString(),
           receivedQty: 0,
         });
         poItems.push(poItem);
@@ -107,7 +109,25 @@ export class PurchaseOrderService {
       await queryRunner.manager.save(savedPurchaseOrder);
 
       await queryRunner.commitTransaction();
-      return savedPurchaseOrder;
+      await queryRunner.release();
+
+      // reload full PO with items + product + createdBy (with eager roles), supplier, warehouse
+      const fullPo = await this.poRepo.findOne({
+        where: { id: savedPurchaseOrder.id },
+        relations: [
+          'supplier',
+          'warehouse',
+          'createdBy', // roles come along via eager:true
+          'items',
+          'items.product',
+        ],
+      });
+      if (!fullPo) {
+        throw new NotFoundException(
+          `PurchaseOrder not found after save: ${savedPurchaseOrder.id}`,
+        );
+      }
+      return fullPo;
     } catch (error: unknown) {
       await queryRunner.rollbackTransaction();
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -191,6 +211,7 @@ export class PurchaseOrderService {
             warehouse: po.warehouse,
             product: poItem.product,
             quantity: 0,
+            companyId: po.warehouse.companyId,
           });
         }
         stockLevel.quantity += receivedQty;
@@ -204,7 +225,25 @@ export class PurchaseOrderService {
 
       const updatedPo = await queryRunner.manager.save(po);
       await queryRunner.commitTransaction();
-      return updatedPo;
+      await queryRunner.release();
+
+      // reload full PO
+      const fullPo = await this.poRepo.findOne({
+        where: { id: updatedPo.id },
+        relations: [
+          'supplier',
+          'warehouse',
+          'createdBy',
+          'items',
+          'items.product',
+        ],
+      });
+      if (!fullPo) {
+        throw new NotFoundException(
+          `PurchaseOrder not found after receive: ${updatedPo.id}`,
+        );
+      }
+      return fullPo;
     } catch (error: unknown) {
       await queryRunner.rollbackTransaction();
       if (

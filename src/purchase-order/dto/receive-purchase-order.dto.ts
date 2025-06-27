@@ -1,3 +1,5 @@
+//src/purchase-order/dto/receive-purchase-order.dto.ts
+
 import { IsUUID, IsArray, ValidateNested, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -12,9 +14,6 @@ export class ReceivePOItemDto {
 }
 
 export class ReceivePurchaseOrderDto {
-  @IsUUID()
-  purchaseOrderId!: string;
-
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ReceivePOItemDto)

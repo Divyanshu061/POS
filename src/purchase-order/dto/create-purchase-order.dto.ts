@@ -1,6 +1,7 @@
+//src/purchase-order/dto/create-purchase-order.dto.ts
+
 import {
   IsUUID,
-  IsString,
   IsArray,
   IsDateString,
   ValidateNested,
@@ -33,9 +34,6 @@ export class CreatePurchaseOrderDto {
 
   @IsUUID()
   warehouseId!: string;
-
-  @IsString()
-  orderNumber!: string;
 
   @IsDateString()
   orderDate!: string;
