@@ -23,7 +23,8 @@ import { PurchaseOrderItem } from '../purchase-order/entities/purchase-order-ite
 import { User } from '../entities/user.entity';
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
-
+// ─── CRM ORDER MODULE ─────────────────────────────────────────────
+import { Client } from '../crm/client/entities/client.entity';
 // ──────────────────────────────────────────────────────────────────────
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -52,6 +53,7 @@ export const AppDataSource = new DataSource({
     User,
     Role,
     Permission,
+    Client,
   ],
 
   migrations: ['src/migrations/*.ts'],

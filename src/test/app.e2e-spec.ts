@@ -1,25 +1,52 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
-import { App } from 'supertest/types';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppModule } from '../app.module';
 
 describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
+  let app: INestApplication;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [
+        TypeOrmModule.forRoot({
+          type: 'postgres',
+          host: 'localhost',
+          port: 5432,
+          username: 'postgres',
+          password: 'div_09', // 🔁 Replace with actual password
+          database: 'pos_test_db', // 🔁 Make sure this DB exists
+          entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+          synchronize: true,
+          dropSchema: true,
+          logging: false,
+        }),
+        AppModule,
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
+
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+
     await app.init();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('GET / - should return "Hello World!"', async () => {
+    const response = await request(app.getHttpServer()).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.text).toBe('Hello World!');
   });
 });
