@@ -25,6 +25,7 @@ import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 // ─── CRM ORDER MODULE ─────────────────────────────────────────────
 import { Client } from '../crm/client/entities/client.entity';
+import { Tag } from '../crm/tag/entities/tag.entity';
 // ──────────────────────────────────────────────────────────────────────
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -54,6 +55,7 @@ export const AppDataSource = new DataSource({
     Role,
     Permission,
     Client,
+    Tag,
   ],
 
   migrations: ['src/migrations/*.ts'],

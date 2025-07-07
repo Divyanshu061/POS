@@ -1,8 +1,13 @@
-// src/crm/client/client.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
+//src/crm/client/client.service.ts
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, QueryFailedError } from 'typeorm';
 import { Client } from './entities/client.entity';
+import { Tag } from '../tag/entities/tag.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
@@ -12,11 +17,33 @@ export class ClientService {
   constructor(
     @InjectRepository(Client)
     private readonly clientRepo: Repository<Client>,
+    @InjectRepository(Tag)
+    private readonly tagRepo: Repository<Tag>,
   ) {}
 
   async create(dto: CreateClientDto, ownerId: string): Promise<Client> {
-    const client = this.clientRepo.create({ ...dto, ownerId });
-    return this.clientRepo.save(client);
+    const tags =
+      dto.tags && dto.tags.length ? await this.tagRepo.findByIds(dto.tags) : [];
+
+    const client = this.clientRepo.create({
+      ...dto,
+      ownerId,
+      tags,
+    });
+    try {
+      return await this.clientRepo.save(client);
+    } catch (err) {
+      // Detect the unique‐constraint on owner+email
+      if (
+        err instanceof QueryFailedError &&
+        err.message.includes('IDX_clients_owner_email')
+      ) {
+        throw new ConflictException(
+          `A client with email "${dto.email}" already exists.`,
+        );
+      }
+      throw err; // re‑throw anything else
+    }
   }
 
   async findAll(
@@ -74,6 +101,7 @@ export class ClientService {
   async findOne(id: string, ownerId: string): Promise<Client> {
     const client = await this.clientRepo.findOne({
       where: { id, ownerId, deletedAt: IsNull() },
+      relations: ['tags'],
     });
     if (!client) {
       throw new NotFoundException(`Client ${id} not found`);
@@ -86,14 +114,18 @@ export class ClientService {
     dto: UpdateClientDto,
     ownerId: string,
   ): Promise<Client> {
-    const result = await this.clientRepo.update(
-      { id, ownerId, deletedAt: IsNull() },
-      dto,
-    );
-    if (result.affected === 0) {
-      throw new NotFoundException(`Client ${id} not found`);
+    const client = await this.findOne(id, ownerId);
+
+    if (dto.tags) {
+      client.tags = await this.tagRepo.findByIds(dto.tags);
     }
-    return this.findOne(id, ownerId);
+
+    // Merge all other fields, excluding tags
+    const rest = { ...dto } as Partial<Client>;
+    delete rest.tags;
+    Object.assign(client, rest);
+
+    return this.clientRepo.save(client);
   }
 
   async remove(id: string, ownerId: string): Promise<void> {

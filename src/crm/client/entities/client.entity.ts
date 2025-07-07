@@ -1,5 +1,3 @@
-// src/crm/client/entities/client.entity.ts
-
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -10,8 +8,11 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { User } from '../../../entities/user.entity';
+import { Tag } from '../../tag/entities/tag.entity';
 
 export enum ClientStatus {
   LEAD = 'lead',
@@ -48,9 +49,6 @@ export class Client {
   })
   status!: ClientStatus;
 
-  @Column('text', { array: true, default: [] })
-  tags!: string[];
-
   // — Owner / Sales‑Rep relationship —
   @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: false })
   @JoinColumn({ name: 'ownerId' })
@@ -68,4 +66,13 @@ export class Client {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  // — Tags (many‑to‑many) —
+  @ManyToMany(() => Tag, (tag) => tag.clients, { cascade: true })
+  @JoinTable({
+    name: 'client_tags',
+    joinColumn: { name: 'client_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
+  })
+  tags!: Tag[];
 }

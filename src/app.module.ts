@@ -31,6 +31,7 @@ import { AuditLogModule } from './inventory/audit-log/audit-log.module';
 
 import { NotificationModule } from './inventory/notification/notification.module';
 import { StockLevelModule } from './inventory/stock-level/stock-level.module';
+import { CrmModule } from './crm/crm.module';
 @Module({
   imports: [
     // ─── 1) Env variables ───────────────────────────────────────────────
@@ -104,6 +105,7 @@ import { StockLevelModule } from './inventory/stock-level/stock-level.module';
     }),
     // ─── Audit Log Module ───────────────────────
     AuditLogModule,
+    CrmModule,
   ],
   providers: [
     // ─── Global validation pipe for all incoming DTOs ───────────────────
