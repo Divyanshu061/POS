@@ -1,4 +1,4 @@
-// src/database/data-source.ts
+// File: src/database/data-source.ts
 
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
@@ -23,9 +23,17 @@ import { PurchaseOrderItem } from '../purchase-order/entities/purchase-order-ite
 import { User } from '../entities/user.entity';
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
+
 // ─── CRM ORDER MODULE ─────────────────────────────────────────────
 import { Client } from '../crm/client/entities/client.entity';
 import { Tag } from '../crm/tag/entities/tag.entity';
+
+// ─── REPORTING MODULE ─────────────────────────────────────────────
+import { ReportDefinition } from '../reporting/entities/report-definition.entity';
+import { ReportRun } from '../reporting/entities/report-run.entity';
+import { Dashboard } from '../reporting/entities/dashboard.entity';
+import { DashboardWidget } from '../reporting/entities/dashboard-widget.entity';
+
 // ──────────────────────────────────────────────────────────────────────
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -56,6 +64,11 @@ export const AppDataSource = new DataSource({
     Permission,
     Client,
     Tag,
+    // reporting
+    ReportDefinition,
+    ReportRun,
+    Dashboard,
+    DashboardWidget,
   ],
 
   migrations: ['src/migrations/*.ts'],

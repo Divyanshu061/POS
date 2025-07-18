@@ -7,6 +7,8 @@ import {
   IsOptional,
   IsString,
   IsArray,
+  ArrayUnique,
+  IsUUID,
 } from 'class-validator';
 import { ClientStatus } from '../entities/client.entity';
 
@@ -59,8 +61,9 @@ export class CreateClientDto {
     example: ['lead', 'vip'],
     description: 'Tags to categorize clients',
   })
-  @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  @IsOptional()
   tags?: string[];
 }

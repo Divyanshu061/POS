@@ -3292,6 +3292,11 @@ css-what@^6.1.0:
 cssesc@^3.0.0:
   version "3.0.0"
 
+csv-stringify@^6.5.2:
+  version "6.5.2"
+  resolved "https://registry.npmjs.org/csv-stringify/-/csv-stringify-6.5.2.tgz"
+  integrity sha512-RFPahj0sXcmUyjrObAK+DOWtMvMIFV328n4qZJhgX3x2RqkQgOTU2mCUmiFR0CzM6AzChlRSUErjiJeEt8BaQA==
+
 dayjs@^1.11.13:
   version "1.11.13"
   resolved "https://registry.npmjs.org/dayjs/-/dayjs-1.11.13.tgz"

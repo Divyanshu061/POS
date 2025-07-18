@@ -16,6 +16,7 @@ import { SalesModule } from './inventory/sales/sales.module';
 
 import { PurchaseOrderModule } from './purchase-order/purchase-order.module';
 import { ClientModule } from './crm/client/client.module';
+import { ReportingModule } from './reporting/reporting.module';
 
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
@@ -71,6 +72,7 @@ import { CrmModule } from './crm/crm.module';
     PurchaseOrderModule,
     AuditLogModule,
     ClientModule,
+    ReportingModule,
 
     // ─── 5) StockLevel & Notification modules (so they can inject MailerService) ─
     StockLevelModule,

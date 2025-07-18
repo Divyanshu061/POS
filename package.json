@@ -33,6 +33,7 @@
     "@nestjs/typeorm": "^10.0.2",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
+    "csv-stringify": "^6.5.2",
     "dotenv": "^16.5.0",
     "joi": "^17.13.3",
     "nodemailer": "^7.0.3",
