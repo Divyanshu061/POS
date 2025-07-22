@@ -1,4 +1,5 @@
-// File: create-report-definition.dto.ts
+// File: src/reporting/dto/create-report-definition.dto.ts
+
 import { IsString, IsOptional, IsEnum, IsObject } from 'class-validator';
 
 export class CreateReportDefinitionDto {
@@ -9,9 +10,14 @@ export class CreateReportDefinitionDto {
   @IsString()
   description?: string;
 
-  @IsEnum(['sales', 'inventory', 'financial'])
-  type!: 'sales' | 'inventory' | 'financial';
+  // ← only the 4 allowed type‑strings go here,
+  //    and they must match the TS union exactly:
+  @IsEnum(['sales', 'purchases', 'inventory', 'financial'] as const)
+  type!: 'sales' | 'purchases' | 'inventory' | 'financial';
 
   @IsObject()
   parameters!: Record<string, any>;
+
+  @IsString()
+  companyId!: string;
 }

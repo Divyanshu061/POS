@@ -9,8 +9,8 @@ import {
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
-import { Dashboard } from './dashboard.entity';
-import { ReportDefinition } from './report-definition.entity';
+import { Dashboard } from '../entities/dashboard.entity';
+import { ReportDefinition } from '../entities/report-definition.entity';
 
 @Entity('dashboard_widgets')
 export class DashboardWidget {

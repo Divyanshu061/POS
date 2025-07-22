@@ -1,4 +1,5 @@
-// update-widget.dto.ts
+//file : src/Reporting/dto/update-widget.dto.ts
+
 import { PartialType } from '@nestjs/mapped-types';
 import { CreateWidgetDto } from './create-widget.dto';
 

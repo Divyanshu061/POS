@@ -9,6 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import { ReportDefinition } from './entities/report-definition.entity';
 import { ReportRun } from './entities/report-run.entity';
+import { UpdateReportDefinitionDto } from './dto/update-report-definition.dto';
 import { Dashboard } from './entities/dashboard.entity';
 import { DashboardWidget } from './entities/dashboard-widget.entity';
 import { Sale } from '../inventory/sales/entities/sale.entity';
@@ -48,12 +49,29 @@ export class ReportingService {
   async createDefinition(
     dto: CreateReportDefinitionDto,
   ): Promise<ReportDefinition> {
-    const definition = this.reportDefRepo.create(dto);
+    const definition = this.reportDefRepo.create({
+      ...dto,
+      company: { id: dto.companyId }, // ← hook up company here
+    });
     return this.reportDefRepo.save(definition);
   }
 
   async getAllDefinitions(): Promise<ReportDefinition[]> {
     return this.reportDefRepo.find();
+  }
+
+  async updateDefinition(
+    id: string,
+    dto: UpdateReportDefinitionDto,
+  ): Promise<ReportDefinition> {
+    const definition = await this.reportDefRepo.findOne({ where: { id } });
+
+    if (!definition) {
+      throw new NotFoundException('Report definition not found');
+    }
+
+    Object.assign(definition, dto);
+    return this.reportDefRepo.save(definition);
   }
 
   // === Report Runs ===
@@ -100,8 +118,11 @@ export class ReportingService {
     let run = this.reportRunRepo.create({
       definition,
       status: 'pending',
+      format: dto.format, // ✅ THIS IS REQUIRED
+      filters: dto.filters, // optional but useful
       resultLocation: { format: dto.format, path: '' },
     });
+
     run = await this.reportRunRepo.save(run);
 
     try {

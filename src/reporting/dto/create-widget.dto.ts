@@ -1,9 +1,11 @@
-// File: create-widget.dto.ts
+//file : src/Reporting/dto/create-widget.dto.ts
 
-import { IsString, IsObject, IsOptional } from 'class-validator';
-
+import { IsUUID, IsObject, IsOptional } from 'class-validator';
 export class CreateWidgetDto {
-  @IsString()
+  @IsUUID()
+  dashboardId!: string;
+
+  @IsUUID()
   reportDefinitionId!: string;
 
   @IsObject()

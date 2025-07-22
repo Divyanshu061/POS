@@ -12,7 +12,8 @@ import { Sale } from '../inventory/sales/entities/sale.entity';
 import { Purchase } from '../inventory/purchase/entities/purchase.entity';
 import { ProductModule } from '../inventory/product/product.module';
 import { Product } from '../inventory/product/entities/product.entity';
-
+import { DashboardModule } from './dashboard/dashboard.module';
+import { WidgetModule } from './widgets/widget.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([
@@ -25,6 +26,8 @@ import { Product } from '../inventory/product/entities/product.entity';
       Product,
     ]),
     ProductModule,
+    DashboardModule,
+    WidgetModule,
   ],
   controllers: [ReportingController],
   providers: [ReportingService],

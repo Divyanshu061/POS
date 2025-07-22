@@ -5,19 +5,25 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
+  Res,
   Param,
   Body,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ReportingService } from './reporting.service';
 import { CreateReportDefinitionDto } from './dto/create-report-definition.dto';
+import { UpdateReportDefinitionDto } from './dto/update-report-definition.dto';
 import { RunReportDto } from './dto/run-report.dto';
 import { CreateDashboardDto } from './dto/create-dashboard.dto';
 import { UpdateDashboardDto } from './dto/update-dashboard.dto';
 import { CreateWidgetDto } from './dto/create-widget.dto';
 import { UpdateWidgetDto } from './dto/update-widget.dto';
+import * as path from 'path';
+import * as fs from 'fs';
 
 @Controller('reporting')
 export class ReportingController {
@@ -35,11 +41,37 @@ export class ReportingController {
     return this.reportingService.getAllDefinitions();
   }
 
+  @Patch('definitions/:id') // updating a definition
+  updateDefinition(
+    @Param('id') id: string,
+    @Body() dto: UpdateReportDefinitionDto,
+  ) {
+    return this.reportingService.updateDefinition(id, dto);
+  }
+
   // === Report Runs ===
   @Post('definitions/:id/run')
   @HttpCode(HttpStatus.ACCEPTED)
   runReport(@Param('id') definitionId: string, @Body() dto: RunReportDto) {
     return this.reportingService.runReport(definitionId, dto);
+  }
+
+  @Get('runs/:id/download')
+  async downloadReport(@Param('id') id: string, @Res() res: Response) {
+    const run = await this.reportingService.getRunById(id);
+
+    if (!run || !run.resultLocation || !run.resultLocation.path) {
+      return res.status(404).json({ message: 'Report file not found.' });
+    }
+
+    const filePath = path.resolve(run.resultLocation.path);
+    const fileExists = fs.existsSync(filePath);
+
+    if (!fileExists) {
+      return res.status(404).json({ message: 'Report file missing on disk.' });
+    }
+
+    return res.download(filePath, path.basename(filePath));
   }
 
   @Get('runs/:id')

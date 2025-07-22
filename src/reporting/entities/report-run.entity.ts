@@ -1,4 +1,4 @@
-//File: report-run.entity.ts**
+// File: src/reporting/entities/report-run.entity.ts
 
 import {
   Entity,
@@ -26,6 +26,14 @@ export class ReportRun {
     default: 'pending',
   })
   status!: 'pending' | 'running' | 'completed' | 'failed';
+
+  // ← NEW: store the filters used for this run
+  @Column({ type: 'jsonb', nullable: true })
+  filters?: Record<string, any>;
+
+  // ← NEW: store the requested format
+  @Column({ length: 10 })
+  format!: 'json' | 'csv' | 'xlsx';
 
   @Column({ type: 'jsonb', nullable: true })
   resultLocation?: { format: string; path: string };
