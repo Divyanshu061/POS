@@ -1,3 +1,5 @@
+//src/inventory/supplier/entities/supplier.entity.ts
+
 import {
   Entity,
   PrimaryGeneratedColumn,

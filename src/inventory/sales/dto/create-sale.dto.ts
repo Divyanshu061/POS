@@ -1,11 +1,62 @@
 // src/inventory/sales/dto/create-sale.dto.ts
 
-import { IsUUID, IsInt, Min, IsNumber } from 'class-validator';
+import {
+  IsUUID,
+  IsInt,
+  Min,
+  IsNumber,
+  IsEnum,
+  IsISO8601,
+  IsOptional,
+  ValidateNested,
+  ArrayMinSize,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  CARD = 'CARD',
+  UPI = 'UPI',
+  BANK = 'BANK',
+  OTHER = 'OTHER',
+}
+
+class SaleItemDto {
+  @IsInt()
+  productId!: number;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+
+  @IsNumber()
+  unitPrice!: number;
+}
 
 export class CreateSaleDto {
-  @IsInt() productId!: number;
-  @IsUUID() warehouseId!: string;
-  @IsInt() @Min(1) quantity!: number;
-  @IsNumber() unitPrice!: number;
-  @IsUUID() companyId!: string;
+  @IsUUID()
+  clientId!: string;
+
+  @ValidateNested({ each: true })
+  @ArrayMinSize(1)
+  @Type(() => SaleItemDto)
+  items!: SaleItemDto[];
+
+  @IsEnum(PaymentMethod)
+  paymentMethod!: PaymentMethod;
+
+  @IsNumber()
+  amountPaid!: number;
+
+  @IsOptional()
+  notes?: string;
+
+  @IsISO8601()
+  saleDate!: string;
+
+  @IsUUID()
+  companyId!: string;
+
+  @IsUUID()
+  warehouseId!: string;
 }

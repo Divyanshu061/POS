@@ -33,6 +33,9 @@ import { AuditLogModule } from './inventory/audit-log/audit-log.module';
 import { NotificationModule } from './inventory/notification/notification.module';
 import { StockLevelModule } from './inventory/stock-level/stock-level.module';
 import { CrmModule } from './crm/crm.module';
+
+// --- Payment & Invoice module ---
+import { PaymentInvoiceModule } from './payment-invoice/payment-invoice.module';
 @Module({
   imports: [
     // ─── 1) Env variables ───────────────────────────────────────────────
@@ -77,6 +80,7 @@ import { CrmModule } from './crm/crm.module';
     // ─── 5) StockLevel & Notification modules (so they can inject MailerService) ─
     StockLevelModule,
     NotificationModule,
+    PaymentInvoiceModule,
 
     // ─── 6) Mailer configuration (via env variables) ─────────────────────
     MailerModule.forRootAsync({

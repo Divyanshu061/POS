@@ -1,3 +1,5 @@
+// src/crm/client/entities/client.entity.ts
+
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -10,9 +12,11 @@ import {
   Index,
   ManyToMany,
   JoinTable,
+  OneToMany,
 } from 'typeorm';
 import { User } from '../../../entities/user.entity';
 import { Tag } from '../../tag/entities/tag.entity';
+import { Invoice } from '../../../payment-invoice/entities/invoice.entity'; // ← add this
 
 export enum ClientStatus {
   LEAD = 'lead',
@@ -75,4 +79,8 @@ export class Client {
     inverseJoinColumn: { name: 'tag_id', referencedColumnName: 'id' },
   })
   tags!: Tag[];
+
+  // — Invoices (one‑to‑many) —
+  @OneToMany(() => Invoice, (invoice) => invoice.client)
+  invoices!: Invoice[];
 }

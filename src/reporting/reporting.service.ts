@@ -130,22 +130,23 @@ export class ReportingService {
       let outputRows: Array<Record<string, string | number>>;
 
       if (definition.type === 'sales') {
-        const salesRows = (await this.saleRepo.find({
+        // fetch sales with their items
+        const sales = await this.saleRepo.find({
           where: { soldAt: Between(from, to) },
-          relations: ['product', 'warehouse'],
-          select: ['soldAt', 'quantity', 'unitPrice'] as (keyof Sale)[],
-        })) as Array<
-          Sale & { product: { name: string }; customer: { name: string } }
-        >;
+          relations: ['items', 'items.product', 'warehouse'],
+        });
 
-        outputRows = salesRows.map((s) => ({
-          Date: s.soldAt.toISOString().slice(0, 10),
-          Product: s.product.name,
-          Warehouse: s.warehouse.name,
-          Quantity: s.quantity,
-          Unit_Price: s.unitPrice,
-          Total: s.quantity * s.unitPrice,
-        }));
+        // produce one row per SaleItem
+        outputRows = sales.flatMap((sale) =>
+          sale.items.map((item) => ({
+            Date: sale.soldAt.toISOString().slice(0, 10),
+            Product: item.product.name,
+            Warehouse: sale.warehouse.name,
+            Quantity: item.quantity,
+            Unit_Price: item.unitPrice,
+            Total: item.quantity * item.unitPrice,
+          })),
+        );
       } else if (
         definition.type === 'purchases' ||
         definition.type === 'financial'

@@ -1,5 +1,3 @@
-// src/inventory/sales/sales.service.ts
-
 import {
   Injectable,
   NotFoundException,
@@ -9,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { Sale } from './entities/sale.entity';
+import { SaleItem } from './entities/sale-item.entity';
 import { CreateSaleDto } from './dto/create-sale.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 
@@ -24,62 +23,84 @@ export class SalesService {
     private readonly saleRepo: Repository<Sale>,
 
     @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>, // ← inject Product repo
+    private readonly productRepo: Repository<Product>,
 
     private readonly txService: TransactionService,
-
     private readonly audit: AuditLogService,
   ) {}
 
-  /**
-   * Creates a sale and logs the stock change.
-   * @param dto sale data
-   * @param userId ID of the user performing the sale (injected via @CurrentUser())
-   */
-
   async create(dto: CreateSaleDto, userId: string): Promise<Sale> {
-    // 1) Check product existence and stock
-    const product = await this.productRepo.findOne({
-      where: { id: dto.productId },
-    });
-    if (!product) {
-      throw new NotFoundException(`Product ${dto.productId} not found`);
+    const stockChanges: Array<{
+      productId: number;
+      warehouseId: string;
+      type: TransactionType;
+      quantity: number;
+      companyId: string;
+    }> = [];
+
+    // 1) Check stock & log audit
+    for (const item of dto.items) {
+      const prod = await this.productRepo.findOne({
+        where: { id: item.productId },
+      });
+      if (!prod)
+        throw new NotFoundException(`Product ${item.productId} not found`);
+      if ((prod.quantity ?? 0) < item.quantity)
+        throw new BadRequestException(
+          `Insufficient stock for product ${item.productId}`,
+        );
+
+      const beforeQty = prod.quantity;
+      prod.quantity -= item.quantity;
+      await this.productRepo.save(prod);
+
+      await this.audit.log({
+        action: 'UPDATE',
+        entity: 'product',
+        entityId: prod.id.toString(),
+        userId,
+        changes: { quantity: { before: beforeQty, after: prod.quantity } },
+      });
+
+      stockChanges.push({
+        productId: prod.id,
+        warehouseId: dto.warehouseId,
+        type: TransactionType.OUT,
+        quantity: item.quantity,
+        companyId: dto.companyId,
+      });
     }
-    if ((product.quantity ?? 0) < dto.quantity) {
-      throw new BadRequestException(
-        `Insufficient stock for product ${dto.productId}`,
-      );
-    }
 
-    // 2) Decrease product quantity
-    const oldQuantity = product.quantity;
-    product.quantity -= dto.quantity;
-    await this.productRepo.save(product);
-
-    // 2a) Log the stock‐out update
-    await this.audit.log({
-      action: 'UPDATE',
-      entity: 'product',
-      entityId: product.id.toString(),
-      userId,
-      changes: {
-        quantity: { before: oldQuantity, after: product.quantity },
-      },
+    // 2) Create sale with cascade items
+    const sale = this.saleRepo.create({
+      clientId: dto.clientId,
+      warehouseId: dto.warehouseId,
+      companyId: dto.companyId,
+      paymentMethod: dto.paymentMethod,
+      amountPaid: dto.amountPaid,
+      notes: dto.notes,
+      soldAt: new Date(dto.saleDate),
+      totalQuantity: dto.items.reduce((sum, i) => sum + i.quantity, 0),
+      totalAmount: dto.items.reduce(
+        (sum, i) => sum + i.unitPrice * i.quantity,
+        0,
+      ),
+      items: dto.items.map((i) => ({
+        productId: i.productId,
+        quantity: i.quantity,
+        unitPrice: i.unitPrice,
+      })),
     });
 
-    // 3) Save the sale record
-    const sale = this.saleRepo.create({ ...dto });
     const saved = await this.saleRepo.save(sale);
 
-    // 4) Automatically record a stock-OUT transaction
-    await this.txService.create({
-      productId: saved.productId,
-      warehouseId: saved.warehouseId,
-      type: TransactionType.OUT,
-      quantity: saved.quantity,
-      reference: `Sale#${saved.id}`,
-      companyId: saved.companyId,
-    });
+    // 3) Stock-out transactions
+    for (const tx of stockChanges) {
+      await this.txService.create({
+        ...tx,
+        reference: `Sale#${saved.id}`,
+      });
+    }
 
     return saved;
   }
@@ -96,47 +117,89 @@ export class SalesService {
 
   async update(id: string, dto: UpdateSaleDto): Promise<Sale> {
     const existing = await this.findOne(id);
-    await this.saleRepo.update(id, { ...dto });
-    const updated = await this.findOne(id);
+    const { items, ...header } = dto;
 
-    const diff = (dto.quantity ?? existing.quantity) - existing.quantity;
-    if (diff !== 0) {
-      await this.txService.create({
-        productId: updated.productId,
-        warehouseId: dto.warehouseId ?? updated.warehouseId,
-        type: TransactionType.ADJUSTMENT,
-        quantity: Math.abs(diff),
-        reference: `Adjusted Sale#${id}`,
-        companyId: updated.companyId,
-      });
+    // Update header
+    const updatePayload: Partial<Sale> = { ...header };
+    if (items) {
+      updatePayload.totalQuantity = items.reduce(
+        (sum, i) => sum + i.quantity,
+        0,
+      );
+      updatePayload.totalAmount = items.reduce(
+        (sum, i) => sum + i.unitPrice * i.quantity,
+        0,
+      );
     }
 
-    return updated;
+    await this.saleRepo.update(id, updatePayload);
+
+    // Replace items if changed
+    if (items) {
+      // clear old
+      await this.saleRepo
+        .createQueryBuilder()
+        .relation(Sale, 'items')
+        .of(id)
+        .remove(existing.items);
+
+      // add new
+      const newItems = items.map((i) => {
+        const si = new SaleItem();
+        si.productId = i.productId;
+        si.quantity = i.quantity;
+        si.unitPrice = i.unitPrice;
+        return si;
+      });
+      await this.saleRepo
+        .createQueryBuilder()
+        .relation(Sale, 'items')
+        .of(id)
+        .add(newItems);
+
+      // log adjustments
+      for (const i of items) {
+        const old = existing.items.find((o) => o.productId === i.productId);
+        const diffQty = i.quantity - (old?.quantity ?? 0);
+        if (diffQty !== 0) {
+          await this.txService.create({
+            productId: i.productId,
+            warehouseId: dto.warehouseId ?? existing.warehouseId,
+            type: TransactionType.ADJUSTMENT,
+            quantity: Math.abs(diffQty),
+            reference: `Adjusted Sale#${id}`,
+            companyId: existing.companyId,
+          });
+        }
+      }
+    }
+
+    return this.findOne(id);
   }
 
   async remove(id: string): Promise<void> {
-    const existing = await this.findOne(id);
+    const sale = await this.findOne(id);
 
-    // Revert product quantity
-    const product = await this.productRepo.findOne({
-      where: { id: existing.productId },
-    });
-    if (product) {
-      product.quantity += existing.quantity;
-      await this.productRepo.save(product);
+    // Revert per-item stock
+    for (const item of sale.items) {
+      const prod = await this.productRepo.findOne({
+        where: { id: item.productId },
+      });
+      if (prod) {
+        prod.quantity += item.quantity;
+        await this.productRepo.save(prod);
+      }
+
+      await this.txService.create({
+        productId: item.productId,
+        warehouseId: sale.warehouseId,
+        type: TransactionType.IN,
+        quantity: item.quantity,
+        reference: `Reverted Sale#${id}`,
+        companyId: sale.companyId,
+      });
     }
 
-    // Record a reversal stock-IN transaction
-    await this.txService.create({
-      productId: existing.productId,
-      warehouseId: existing.warehouseId,
-      type: TransactionType.IN,
-      quantity: existing.quantity,
-      reference: `Reverted Sale#${id}`,
-      companyId: existing.companyId,
-    });
-
-    // Delete the sale record
     await this.saleRepo.delete(id);
   }
 }
