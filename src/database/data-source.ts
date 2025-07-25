@@ -36,6 +36,7 @@ import { DashboardWidget } from '../reporting/entities/dashboard-widget.entity';
 // ─── PAYMENT & INVOICE MODULE ────────────────────────────────────────
 import { Invoice } from '../payment-invoice/entities/invoice.entity';
 import { Payment } from '../payment-invoice/entities/payment.entity';
+import { InvoiceLineItem } from '../payment-invoice/entities/invoice-line-item.entity';
 
 // ─── DATA SOURCE CONFIG ──────────────────────────────────────────────
 export const AppDataSource = new DataSource({
@@ -85,6 +86,7 @@ export const AppDataSource = new DataSource({
     // Payment & Invoice
     Invoice,
     Payment,
+    InvoiceLineItem,
   ],
 
   migrations: ['src/migrations/*.ts'],

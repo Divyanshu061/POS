@@ -1,4 +1,4 @@
-// src/payment-invoice/entities/invoice.entity.ts
+// File: src/payment-invoice/entities/invoice.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Client } from '../../crm/client/entities/client.entity';
 import { Payment } from './payment.entity';
+import { InvoiceLineItem } from './invoice-line-item.entity';
 
 @Entity('invoices')
 export class Invoice {
@@ -20,7 +21,6 @@ export class Invoice {
   @Column({ type: 'varchar', length: 50, unique: true })
   invoiceNumber!: string;
 
-  // Link to Client entity with explicit foreign key
   @ManyToOne(() => Client, (client) => client.invoices, {
     nullable: false,
     onDelete: 'CASCADE',
@@ -49,4 +49,15 @@ export class Invoice {
 
   @OneToMany(() => Payment, (payment) => payment.invoice)
   payments!: Payment[];
+
+  // New one-to-many relation for line items
+  // @OneToMany(() => InvoiceLineItem, (item) => item.invoice, { cascade: true })
+  // items!: InvoiceLineItem[];
+
+  @OneToMany(
+    () => InvoiceLineItem,
+    (lineItem: InvoiceLineItem) => lineItem.invoice,
+    { cascade: true },
+  )
+  items!: InvoiceLineItem[];
 }
