@@ -1,3 +1,5 @@
+// src/inventory/transaction/entities/transaction.entity.ts
+
 import {
   Entity,
   PrimaryGeneratedColumn,

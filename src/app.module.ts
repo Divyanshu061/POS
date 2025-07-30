@@ -101,7 +101,7 @@ import { PaymentInvoiceModule } from './payment-invoice/payment-invoice.module';
         },
         template: {
           // At runtime: __dirname → dist/, so this points to <project-root>/templates/email
-          dir: join(__dirname, '..', 'emails'),
+          dir: join(__dirname, 'emails'),
           adapter: new HandlebarsAdapter(),
           options: {
             strict: true,

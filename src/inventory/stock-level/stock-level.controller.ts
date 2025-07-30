@@ -1,3 +1,5 @@
+//src/inventory/stock-level/stock-level.controller.ts
+
 import {
   Controller,
   Get,
@@ -7,7 +9,9 @@ import {
   Param,
   Body,
   Query,
+  UsePipes,
   UseGuards,
+  ValidationPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -15,6 +19,7 @@ import { Roles } from '../../auth/decorators/roles.decorator';
 import { StockLevelService } from './stock-level.service';
 import { CreateStockLevelDto } from './dto/create-stock-level.dto';
 import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
+import { AdjustStockDto } from './dto/adjust-stock.dto';
 
 @Controller('inventory/stock-levels')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -58,5 +63,19 @@ export class StockLevelController {
   @Roles('admin')
   remove(@Param('id') id: string) {
     return this.svc.remove(id);
+  }
+
+  @Post('adjust')
+  @Roles('admin', 'store_manager', 'warehouse_staff')
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
+  adjustStock(@Body() dto: AdjustStockDto) {
+    console.log('Validated DTO:', dto);
+    return this.svc.adjustStock(dto);
   }
 }

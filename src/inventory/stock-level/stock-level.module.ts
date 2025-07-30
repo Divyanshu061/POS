@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
 
 import { StockLevel } from './entities/stock-level.entity';
 import { StockLevelService } from './stock-level.service';
@@ -10,6 +11,7 @@ import { Product } from '../product/entities/product.entity';
   imports: [
     TypeOrmModule.forFeature([StockLevel, Product]),
     NotificationModule,
+    ConfigModule,
   ],
   providers: [StockLevelService],
   controllers: [StockLevelController],
