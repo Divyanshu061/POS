@@ -15,6 +15,7 @@ import { DashboardWidget } from './entities/dashboard-widget.entity';
 import { Sale } from '../inventory/sales/entities/sale.entity';
 import { Purchase } from '../inventory/purchase/entities/purchase.entity';
 import { Product } from '../inventory/product/entities/product.entity';
+import { StockLevel } from '../inventory/stock-level/entities/stock-level.entity';
 import { CreateReportDefinitionDto } from './dto/create-report-definition.dto';
 import { ReportFilters } from './dto/run-report.dto';
 import { RunReportDto } from './dto/run-report.dto';
@@ -43,6 +44,8 @@ export class ReportingService {
     private readonly dashboardRepo: Repository<Dashboard>,
     @InjectRepository(DashboardWidget)
     private readonly widgetRepo: Repository<DashboardWidget>,
+    @InjectRepository(StockLevel)
+    private readonly stockLevelRepo: Repository<StockLevel>,
   ) {}
 
   // === Report Definitions ===
@@ -287,7 +290,7 @@ export class ReportingService {
     to: Date,
     filters?: Record<string, any>,
   ): Promise<Array<Record<string, string | number>>> {
-    // Sum purchases
+    // 1) Sum purchases
     const purchaseSums = await this.purchaseRepo
       .createQueryBuilder('p')
       .select('p.productId', 'productId')
@@ -296,7 +299,7 @@ export class ReportingService {
       .groupBy('p.productId')
       .getRawMany<{ productId: string; purchasedQty: string }>();
 
-    // Sum sales
+    // 2) Sum sales
     const saleSums = await this.saleRepo
       .createQueryBuilder('s')
       .select('s.productId', 'productId')
@@ -305,37 +308,43 @@ export class ReportingService {
       .groupBy('s.productId')
       .getRawMany<{ productId: string; soldQty: string }>();
 
-    // Map to lookup
     const purchasedMap = Object.fromEntries(
-      purchaseSums.map((r) => [r.productId, Number(r.purchasedQty)]),
+      purchaseSums.map((r) => [Number(r.productId), Number(r.purchasedQty)]),
     );
     const soldMap = Object.fromEntries(
-      saleSums.map((r) => [r.productId, Number(r.soldQty)]),
+      saleSums.map((r) => [Number(r.productId), Number(r.soldQty)]),
     );
 
-    // Load products (apply filters)
+    // 3) Load products applying filters
     const qb = this.productRepo.createQueryBuilder('prod');
-    // Destructure filters with safe defaults (assert typed)
     const { categoryId, supplierId } = (filters ?? {}) as ReportFilters;
-
-    // Apply category filter if provided
-    if (categoryId) {
+    if (categoryId)
       qb.andWhere('prod.categoryId = :categoryId', { categoryId });
-    }
-
-    // Apply supplier filter if provided
-    if (supplierId) {
+    if (supplierId)
       qb.andWhere('prod.supplierId = :supplierId', { supplierId });
-    }
-
     const products = await qb.getMany();
-    // Build rows
+    const productIds = products.map((p) => p.id);
+
+    // 4) Sum current stock from StockLevel
+    const stockSums = await this.stockLevelRepo
+      .createQueryBuilder('sl')
+      .select('sl.productId', 'productId')
+      .addSelect('SUM(sl.quantity)', 'currentQty')
+      .where('sl.productId IN (:...ids)', { ids: productIds })
+      .groupBy('sl.productId')
+      .getRawMany<{ productId: string; currentQty: string }>();
+
+    const currentMap = Object.fromEntries(
+      stockSums.map((r) => [Number(r.productId), Number(r.currentQty)]),
+    );
+
+    // 5) Build report rows
     return products.map((p) => ({
       productId: p.id,
       productName: p.name,
       purchasedQty: purchasedMap[p.id] ?? 0,
       soldQty: soldMap[p.id] ?? 0,
-      currentQty: p.quantity,
+      currentQty: currentMap[p.id] ?? 0,
     }));
   }
 }

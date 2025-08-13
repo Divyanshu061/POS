@@ -10,6 +10,7 @@ import { DashboardWidget } from './entities/dashboard-widget.entity';
 import { ReportRun } from './entities/report-run.entity';
 import { Sale } from '../inventory/sales/entities/sale.entity';
 import { Purchase } from '../inventory/purchase/entities/purchase.entity';
+import { StockLevel } from '../inventory/stock-level/entities/stock-level.entity';
 import { ProductModule } from '../inventory/product/product.module';
 import { Product } from '../inventory/product/entities/product.entity';
 import { DashboardModule } from './dashboard/dashboard.module';
@@ -24,6 +25,7 @@ import { WidgetModule } from './widgets/widget.module';
       Sale,
       Purchase,
       Product,
+      StockLevel,
     ]),
     ProductModule,
     DashboardModule,

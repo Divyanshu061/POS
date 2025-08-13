@@ -20,7 +20,12 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config \"src/test/jest-e2e.json\"",
-    "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run --dataSource ./src/data-source.ts"
+    "migration:run": "ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js migration:run --dataSource ./src/data-source.ts",
+    "seed:users": "ts-node -r tsconfig-paths/register src/database/seed-users.ts",
+    "seed:products": "ts-node -r tsconfig-paths/register src/database/seed-products.ts",
+    "seed:clients": "ts-node -r tsconfig-paths/register src/database/seed-clients.ts",
+    "seed:tags": "ts-node -r tsconfig-paths/register src/database/seed-tags.ts",
+    "seed:purchase-orders": "ts-node -r tsconfig-paths/register src/database/seed-purchase-orders.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",
@@ -82,7 +87,7 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typeorm": "^0.3.24",
-    "typescript": "^5.7.3",
+    "typescript": "^5.8.3",
     "typescript-eslint": "^8.20.0"
   },
   "jest": {

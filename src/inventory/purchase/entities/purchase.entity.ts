@@ -54,6 +54,9 @@ export class Purchase {
   @Column('uuid')
   companyId!: string;
 
+  @Column('uuid')
+  warehouseId!: string;
+
   /**
    * Automatically set when the purchase record is created.
    */

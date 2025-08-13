@@ -1,26 +1,20 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+// src/inventory/purchase/purchase.service.ts
+
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+
 import { Purchase } from './entities/purchase.entity';
-import { Product } from '../product/entities/product.entity';
 import { CreatePurchaseDto, UpdatePurchaseDto } from './dto';
-import { TransactionService } from '../transaction/transaction.service';
 import { TransactionType } from '../transaction/entities/transaction.entity';
+import { StockLevelService } from '../stock-level/stock-level.service';
 
 @Injectable()
 export class PurchaseService {
   constructor(
     @InjectRepository(Purchase)
     private readonly purchaseRepo: Repository<Purchase>,
-
-    @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>,
-
-    private readonly txService: TransactionService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   /**
@@ -30,6 +24,7 @@ export class PurchaseService {
     const purchase = this.purchaseRepo.create({
       supplierId: dto.supplierId,
       productId: dto.productId,
+      warehouseId: dto.warehouseId,
       quantity: dto.quantity,
       unitCost: dto.unitCost,
       companyId: dto.companyId,
@@ -37,25 +32,14 @@ export class PurchaseService {
 
     const saved = await this.purchaseRepo.save(purchase);
 
-    const product = await this.productRepo.findOne({
-      where: { id: saved.productId },
-    });
-    if (!product) {
-      throw new NotFoundException(`Product ${saved.productId} not found`);
-    }
-
-    // ✅ Purchase adds stock (stock-IN)
-    product.quantity = (product.quantity || 0) + saved.quantity;
-    await this.productRepo.save(product);
-
-    // Record stock-IN transaction
-    await this.txService.create({
+    // Delegate stock-IN entirely to StockLevelService
+    await this.stockLevelService.adjustStock({
       productId: saved.productId,
-      warehouseId: dto.warehouseId,
+      warehouseId: saved.warehouseId,
+      companyId: saved.companyId,
       type: TransactionType.IN,
       quantity: saved.quantity,
       reference: `Purchase#${saved.id}`,
-      companyId: dto.companyId,
     });
 
     return saved;
@@ -85,7 +69,7 @@ export class PurchaseService {
   async update(id: string, dto: UpdatePurchaseDto): Promise<Purchase> {
     const existing = await this.findOne(id);
 
-    // Calculate quantity difference
+    // Calculate how many units have changed
     const newQuantity = dto.quantity ?? existing.quantity;
     const quantityDiff = newQuantity - existing.quantity;
 
@@ -96,23 +80,15 @@ export class PurchaseService {
 
     const updated = await this.findOne(id);
 
-    const product = await this.productRepo.findOne({
-      where: { id: updated.productId },
+    // Delegate the IN or OUT adjustment based on diff sign
+    await this.stockLevelService.adjustStock({
+      productId: updated.productId,
+      warehouseId: updated.warehouseId,
+      companyId: updated.companyId,
+      type: quantityDiff >= 0 ? TransactionType.IN : TransactionType.OUT,
+      quantity: Math.abs(quantityDiff),
+      reference: `Purchase#${updated.id}`,
     });
-
-    if (!product) {
-      throw new NotFoundException(`Product ${updated.productId} not found`);
-    }
-
-    // ✅ Adjust stock correctly
-    product.quantity = (product.quantity || 0) + quantityDiff;
-    if (product.quantity < 0) {
-      throw new BadRequestException(
-        `Product stock cannot go below zero. Current: ${product.quantity}, Adjustment: ${quantityDiff}`,
-      );
-    }
-
-    await this.productRepo.save(product);
 
     return updated;
   }
@@ -123,20 +99,15 @@ export class PurchaseService {
   async remove(id: string): Promise<void> {
     const existing = await this.findOne(id);
 
-    const product = await this.productRepo.findOne({
-      where: { id: existing.productId },
+    // Reverse the original purchase quantities
+    await this.stockLevelService.adjustStock({
+      productId: existing.productId,
+      warehouseId: existing.warehouseId,
+      companyId: existing.companyId,
+      type: TransactionType.OUT,
+      quantity: existing.quantity,
+      reference: `RevertPurchase#${existing.id}`,
     });
-
-    if (product) {
-      // ✅ Remove purchase → remove stock
-      product.quantity = (product.quantity || 0) - existing.quantity;
-      if (product.quantity < 0) {
-        throw new BadRequestException(
-          `Product stock cannot go below zero after deletion.`,
-        );
-      }
-      await this.productRepo.save(product);
-    }
 
     await this.purchaseRepo.delete(id);
   }

@@ -47,11 +47,11 @@ export class CreateProductDto {
   @MaxLength(50)
   unit?: string; // e.g., pcs, kg, litre
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  @Min(0)
-  quantity?: number;
+  // @IsOptional()
+  // @Type(() => Number)
+  // @IsNumber()
+  // @Min(0)
+  // quantity?: number;
 
   @IsUUID()
   companyId!: string;

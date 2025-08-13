@@ -50,9 +50,6 @@ export class Product {
   @Column({ nullable: true })
   unit?: string; // e.g. 'pcs', 'kg', 'litre', etc.
 
-  @Column('int', { default: 0 })
-  quantity!: number;
-
   // ─────── Foreign Key Fields ───────
   @Column('uuid')
   companyId!: string;

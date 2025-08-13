@@ -13,8 +13,8 @@ import { UpdateSaleDto } from './dto/update-sale.dto';
 
 import { TransactionService } from '../transaction/transaction.service';
 import { TransactionType } from '../transaction/entities/transaction.entity';
-import { Product } from '../product/entities/product.entity';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { StockLevelService } from '../stock-level/stock-level.service';
 
 @Injectable()
 export class SalesService {
@@ -22,11 +22,9 @@ export class SalesService {
     @InjectRepository(Sale)
     private readonly saleRepo: Repository<Sale>,
 
-    @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>,
-
     private readonly txService: TransactionService,
     private readonly audit: AuditLogService,
+    private readonly stockLevelService: StockLevelService,
   ) {}
 
   async create(dto: CreateSaleDto, userId: string): Promise<Sale> {
@@ -40,30 +38,33 @@ export class SalesService {
 
     // 1) Check stock & log audit
     for (const item of dto.items) {
-      const prod = await this.productRepo.findOne({
-        where: { id: item.productId },
-      });
-      if (!prod)
-        throw new NotFoundException(`Product ${item.productId} not found`);
-      if ((prod.quantity ?? 0) < item.quantity)
+      const currentStock = await this.stockLevelService.getStockLevel(
+        dto.companyId,
+        item.productId,
+        dto.warehouseId,
+      );
+
+      if (currentStock.quantity < item.quantity) {
         throw new BadRequestException(
           `Insufficient stock for product ${item.productId}`,
         );
-
-      const beforeQty = prod.quantity;
-      prod.quantity -= item.quantity;
-      await this.productRepo.save(prod);
+      }
 
       await this.audit.log({
         action: 'UPDATE',
-        entity: 'product',
-        entityId: prod.id.toString(),
+        entity: 'stock',
+        entityId: `${item.productId}-${dto.warehouseId}`,
         userId,
-        changes: { quantity: { before: beforeQty, after: prod.quantity } },
+        changes: {
+          quantity: {
+            before: currentStock.quantity,
+            after: currentStock.quantity - item.quantity,
+          },
+        },
       });
 
       stockChanges.push({
-        productId: prod.id,
+        productId: item.productId,
         warehouseId: dto.warehouseId,
         type: TransactionType.OUT,
         quantity: item.quantity,
@@ -100,6 +101,15 @@ export class SalesService {
         ...tx,
         reference: `Sale#${saved.id}`,
       });
+
+      await this.stockLevelService.adjustStock({
+        productId: tx.productId,
+        warehouseId: tx.warehouseId,
+        companyId: tx.companyId,
+        type: TransactionType.OUT,
+        quantity: tx.quantity,
+        reference: `Sale#${saved.id}`,
+      });
     }
 
     return saved;
@@ -110,7 +120,10 @@ export class SalesService {
   }
 
   async findOne(id: string): Promise<Sale> {
-    const sale = await this.saleRepo.findOne({ where: { id } });
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['items'],
+    });
     if (!sale) throw new NotFoundException(`Sale ${id} not found`);
     return sale;
   }
@@ -119,7 +132,6 @@ export class SalesService {
     const existing = await this.findOne(id);
     const { items, ...header } = dto;
 
-    // Update header
     const updatePayload: Partial<Sale> = { ...header };
     if (items) {
       updatePayload.totalQuantity = items.reduce(
@@ -134,16 +146,13 @@ export class SalesService {
 
     await this.saleRepo.update(id, updatePayload);
 
-    // Replace items if changed
     if (items) {
-      // clear old
       await this.saleRepo
         .createQueryBuilder()
         .relation(Sale, 'items')
         .of(id)
         .remove(existing.items);
 
-      // add new
       const newItems = items.map((i) => {
         const si = new SaleItem();
         si.productId = i.productId;
@@ -157,7 +166,6 @@ export class SalesService {
         .of(id)
         .add(newItems);
 
-      // log adjustments
       for (const i of items) {
         const old = existing.items.find((o) => o.productId === i.productId);
         const diffQty = i.quantity - (old?.quantity ?? 0);
@@ -170,6 +178,15 @@ export class SalesService {
             reference: `Adjusted Sale#${id}`,
             companyId: existing.companyId,
           });
+
+          await this.stockLevelService.adjustStock({
+            productId: i.productId,
+            warehouseId: dto.warehouseId ?? existing.warehouseId,
+            companyId: existing.companyId,
+            type: diffQty > 0 ? TransactionType.OUT : TransactionType.IN,
+            quantity: Math.abs(diffQty),
+            reference: `Adjusted Sale#${id}`,
+          });
         }
       }
     }
@@ -180,16 +197,7 @@ export class SalesService {
   async remove(id: string): Promise<void> {
     const sale = await this.findOne(id);
 
-    // Revert per-item stock
     for (const item of sale.items) {
-      const prod = await this.productRepo.findOne({
-        where: { id: item.productId },
-      });
-      if (prod) {
-        prod.quantity += item.quantity;
-        await this.productRepo.save(prod);
-      }
-
       await this.txService.create({
         productId: item.productId,
         warehouseId: sale.warehouseId,
@@ -197,6 +205,15 @@ export class SalesService {
         quantity: item.quantity,
         reference: `Reverted Sale#${id}`,
         companyId: sale.companyId,
+      });
+
+      await this.stockLevelService.adjustStock({
+        productId: item.productId,
+        warehouseId: sale.warehouseId,
+        companyId: sale.companyId,
+        type: TransactionType.IN,
+        quantity: item.quantity,
+        reference: `Reverted Sale#${id}`,
       });
     }
 

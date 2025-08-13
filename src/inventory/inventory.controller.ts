@@ -126,13 +126,15 @@ export class InventoryController {
    * POST /inventory/stock/adjust
    */
   @Post('stock/adjust')
-  @Roles('admin', 'store_manager', 'warehouse_staff')
+  @Roles('admin', 'store_manager', 'warehoause_staff')
   adjustStock(
     @Company() companyId: string,
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: AdjustStockDto,
   ): Promise<StockLevel> {
-    return this.stockSvc.adjustStock({ ...dto, companyId });
+    return this.stockSvc
+      .adjustStock({ ...dto, companyId })
+      .then((res) => res.stock);
   }
 
   /**

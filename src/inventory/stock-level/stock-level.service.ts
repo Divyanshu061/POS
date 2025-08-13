@@ -1,3 +1,4 @@
+// src/inventory/stock-level/stock-level.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -13,6 +14,7 @@ import {
   In,
   FindOptionsWhere,
   FindOperator,
+  EntityManager,
 } from 'typeorm';
 
 import { StockLevel } from './entities/stock-level.entity';
@@ -20,6 +22,7 @@ import { Product } from '../product/entities/product.entity';
 import { CreateStockLevelDto } from './dto/create-stock-level.dto';
 import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
+
 import {
   Transaction,
   TransactionType,
@@ -83,8 +86,28 @@ export class StockLevelService {
     }
   }
 
-  // Stock adjustment with notification
-  async adjustStock(dto: AdjustStockDto): Promise<StockLevel> {
+  /**
+   * Public helper to send low-stock alert via NotificationService.
+   * Useful for sending alerts after transaction commit.
+   */
+  public async sendLowStockAlert(
+    recipient: string,
+    payload: { productName: string; currentQty: number },
+  ) {
+    await this.notificationService.sendLowStockAlert(recipient, payload);
+  }
+
+  /**
+   * Adjust stock. If `manager` is provided, it participates in that transaction.
+   * Returns { stock, low } where `low` is true if quantity <= threshold.
+   *
+   * NOTE: when called with `manager`, this method DOES NOT send notifications.
+   * The caller should send notifications after the outer transaction completes.
+   */
+  async adjustStock(
+    dto: AdjustStockDto,
+    manager?: EntityManager,
+  ): Promise<{ stock: StockLevel; low: boolean }> {
     const { productId, warehouseId, companyId, type, quantity, reference } =
       dto;
 
@@ -92,8 +115,8 @@ export class StockLevelService {
       throw new BadRequestException(`Unknown transaction type "${type}"`);
     }
 
-    const updated = await this.dataSource.transaction(async (manager) => {
-      const tx = manager.create(Transaction, {
+    const run = async (m: EntityManager) => {
+      const tx = m.create(Transaction, {
         productId,
         warehouseId,
         companyId,
@@ -101,14 +124,15 @@ export class StockLevelService {
         quantity,
         reference,
       });
-      await manager.save(tx);
+      await m.save(tx);
 
-      let sl = await manager.findOne(StockLevel, {
+      let sl = await m.findOne(StockLevel, {
         where: { productId, warehouseId, companyId },
         relations: ['product', 'warehouse'],
       });
+
       if (!sl) {
-        sl = manager.create(StockLevel, {
+        sl = m.create(StockLevel, {
           productId,
           warehouseId,
           companyId,
@@ -117,20 +141,34 @@ export class StockLevelService {
       }
 
       sl.quantity += type === TransactionType.IN ? quantity : -quantity;
-      return manager.save(sl);
+      const saved = await m.save(sl);
+
+      const low = saved.quantity <= this.LOW_STOCK_THRESHOLD;
+      return { stock: saved, low };
+    };
+
+    if (manager) {
+      // participate in caller's transaction; do NOT send notifications here
+      return run(manager);
+    }
+
+    // No manager => run our own transaction and handle notifications AFTER commit.
+    const result = await this.dataSource.transaction(async (m) => {
+      return run(m);
     });
 
-    if (updated.quantity <= this.LOW_STOCK_THRESHOLD) {
+    // transaction committed; safe to send notifications now
+    if (result.low) {
       this.logger.warn(
-        `Low stock for ${updated.product.name}: ${updated.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
+        `Low stock for ${result.stock.product.name}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
       );
       await this.notificationService.sendLowStockAlert(this.ALERT_RECIPIENT, {
-        productName: updated.product.name,
-        currentQty: updated.quantity,
+        productName: result.stock.product.name,
+        currentQty: result.stock.quantity,
       });
     }
 
-    return updated;
+    return result;
   }
 
   async getStockLevel(
@@ -166,10 +204,12 @@ export class StockLevelService {
       lowStockLevels.map((sl) => sl.productId),
     );
 
-    const productWhere: FindOptionsWhere<Product> = {
+    // Use type assertion to allow 'quantity'
+    const productWhere = {
       companyId,
       quantity: LessThanOrEqual(threshold),
-    };
+    } as FindOptionsWhere<Product>;
+
     if (existingProductIds.size > 0) {
       productWhere.id = Not(
         In(Array.from(existingProductIds)),

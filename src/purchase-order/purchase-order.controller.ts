@@ -11,6 +11,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PurchaseOrderService } from './purchase-order.service';
 import { CreatePurchaseOrderDto } from './dto/create-purchase-order.dto';
@@ -42,11 +43,11 @@ export class PurchaseOrderController {
   }
 
   @Patch(':id/receive')
-  @HttpCode(HttpStatus.OK)
   receiveGoods(
     @Param('id') id: string,
     @Body() receiveDto: ReceivePurchaseOrderDto,
+    @CurrentUser() authUser: User,
   ) {
-    return this.poService.receiveGoods(id, receiveDto);
+    return this.poService.receiveGoods(id, receiveDto, authUser);
   }
 }
