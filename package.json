@@ -25,7 +25,10 @@
     "seed:products": "ts-node -r tsconfig-paths/register src/database/seed-products.ts",
     "seed:clients": "ts-node -r tsconfig-paths/register src/database/seed-clients.ts",
     "seed:tags": "ts-node -r tsconfig-paths/register src/database/seed-tags.ts",
-    "seed:purchase-orders": "ts-node -r tsconfig-paths/register src/database/seed-purchase-orders.ts"
+    "seed:purchase-orders": "ts-node -r tsconfig-paths/register src/database/seed-purchase-orders.ts",
+    "seed:sales": "ts-node -r tsconfig-paths/register src/database/seed-sales.ts",
+    "seed:invoice-payments": "ts-node -r tsconfig-paths/register src/database/seed-invoices-payments.ts",
+    "seed:clients-invoices-payments": "ts-node -r tsconfig-paths/register src/database/seed-clients-invoices-payments.ts"
   },
   "dependencies": {
     "@nestjs-modules/mailer": "^2.0.2",

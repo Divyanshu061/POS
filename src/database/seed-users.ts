@@ -3,7 +3,7 @@ import { DataSource } from 'typeorm';
 import { hash } from 'bcrypt';
 import { AppDataSource } from './data-source';
 import { User } from '../entities/user.entity';
-import { Role } from '../entities/role.entity'; // adjust path if needed
+import { Role } from '../entities/role.entity';
 
 async function seedUsers() {
   const ds: DataSource = AppDataSource;
@@ -23,7 +23,6 @@ async function seedUsers() {
     }
   }
 
-  // Seed admin user
   const adminEmail = process.env.ADMIN_EMAIL || 'admin@example.com';
   const adminPassword = process.env.ADMIN_PASSWORD || 'ChangeMe123!';
 
