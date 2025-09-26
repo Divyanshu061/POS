@@ -56,7 +56,7 @@ export class InventoryService {
     return product;
   }
 
-  createProduct(dto: CreateProductDto): Promise<Product> {
+  createProduct(companyId: string, dto: CreateProductDto): Promise<Product> {
     // pick exactly the entity columns
     const partial: DeepPartial<Product> = {
       name: dto.name,
@@ -64,7 +64,7 @@ export class InventoryService {
       barcode: dto.barcode,
       description: dto.description,
       unitPrice: dto.unitPrice,
-      companyId: dto.companyId, // string is fine here
+      companyId: companyId, // string is fine here
       categoryId:
         dto.categoryId !== undefined ? String(dto.categoryId) : undefined,
       supplierId:
@@ -75,7 +75,11 @@ export class InventoryService {
     return this.productRepo.save(product);
   }
 
-  async updateProduct(id: string, dto: UpdateProductDto): Promise<Product> {
+  async updateProduct(
+    companyId: string,
+    id: string,
+    dto: UpdateProductDto,
+  ): Promise<Product> {
     const productId = this.parseProductId(id);
     await this.findProductById(id);
 
@@ -86,7 +90,7 @@ export class InventoryService {
       ...('barcode' in dto && { barcode: dto.barcode }),
       ...('description' in dto && { description: dto.description }),
       ...('unitPrice' in dto && { unitPrice: dto.unitPrice }),
-      ...('companyId' in dto && { companyId: dto.companyId }),
+      companyId,
       ...(dto.categoryId !== undefined && {
         categoryId: String(dto.categoryId),
       }),

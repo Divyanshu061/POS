@@ -1,7 +1,7 @@
 // src/database/seed-purchase-orders.ts
 import 'reflect-metadata';
-import { Repository } from 'typeorm';
 import { AppDataSource } from './data-source';
+import { DataSource, Repository } from 'typeorm';
 import { Company } from '../inventory/company/entities/company.entity';
 import { Supplier } from '../inventory/supplier/entities/supplier.entity';
 import { Warehouse } from '../inventory/warehouse/entities/warehouse.entity';
@@ -13,8 +13,7 @@ import { PurchaseOrderItem } from '../purchase-order/entities/purchase-order-ite
 import { PurchaseOrderStatus } from '../purchase-order/enums/purchase-order-status.enum';
 
 /**
- * Helper: produce a short human-friendly suffix for a company
- * used when creating company-specific SKU variants.
+ * Short human-friendly suffix used to create company-specific SKU variants.
  */
 function shortCompanySuffix(companyId: string, companyName?: string) {
   if (companyName) {
@@ -28,14 +27,9 @@ function shortCompanySuffix(companyId: string, companyName?: string) {
 }
 
 /**
- * Idempotent seeding of purchase orders (company-aware).
- *
- * Behavior notes:
- * - If a SKU exists globally but owned by another company, we will:
- *   1) reuse any existing company-derived copy (sku LIKE 'SF-1003-%' AND companyId = ...)
- *   2) only if none found, create a new company-specific copy with a unique SKU suffix.
+ * The main seed function. Idempotent and company-aware.
  */
-export async function seed(ds = AppDataSource): Promise<void> {
+export async function seed(ds: DataSource = AppDataSource): Promise<void> {
   let mustDestroy = false;
   try {
     if (!ds.isInitialized) {
@@ -48,18 +42,18 @@ export async function seed(ds = AppDataSource): Promise<void> {
     const warehouseRepo = ds.getRepository(Warehouse);
     const userRepo = ds.getRepository(User);
 
-    // Find company (prefer Seed Co)
-    let company = await companyRepo.findOneBy({ name: 'Seed Co' });
+    // pick a company to seed into (prefer "Seed Co")
+    let company = await companyRepo.findOne({ where: { name: 'Seed Co' } });
     if (!company) {
       const companies = await companyRepo.find({ take: 1 });
       company = companies[0];
     }
-    if (!company) throw new Error('Company not found. Seed company first.');
+    if (!company) throw new Error('No company found. Seed a company first.');
 
     const companyId = company.id;
     const companyName = company.name;
 
-    // Ensure supplier
+    // ensure supplier for this company
     let supplier = await supplierRepo.findOne({
       where: { name: 'Sunrise Distributors', companyId },
     });
@@ -67,15 +61,14 @@ export async function seed(ds = AppDataSource): Promise<void> {
       supplier = supplierRepo.create({
         name: 'Sunrise Distributors',
         companyId,
-      });
+      } as Partial<Supplier>);
       await supplierRepo.save(supplier);
-      console.log('[po] Created supplier for company', companyId);
+      console.log('[seed-po] Created supplier for company', companyId);
     } else {
-      console.log('[po] Using supplier', supplier.id);
+      console.log('[seed-po] Using supplier', supplier.id);
     }
-    const supplierId = supplier.id;
 
-    // Ensure warehouse
+    // ensure warehouse
     let warehouse = await warehouseRepo.findOne({
       where: { name: 'Main Store', companyId },
     });
@@ -84,34 +77,30 @@ export async function seed(ds = AppDataSource): Promise<void> {
         name: 'Main Store',
         address: 'Seed Location',
         companyId,
-      });
+      } as Partial<Warehouse>);
       await warehouseRepo.save(warehouse);
-      console.log(
-        '[po] Created warehouse for company',
-        companyId,
-        warehouse.id,
-      );
+      console.log('[seed-po] Created warehouse for company', companyId);
     } else {
-      console.log('[po] Using warehouse', warehouse.id);
+      console.log('[seed-po] Using warehouse', warehouse.id);
     }
 
-    // Ensure owner user (createdBy)
-    let owner = await userRepo.findOneBy({ companyId });
+    // ensure a user (owner)
+    let owner = await userRepo.findOne({ where: { companyId } });
     if (!owner) {
       owner = userRepo.create({
         name: 'Seed Admin',
         email: `seedadmin+${companyId.slice(0, 6)}@example.com`,
         password: 'supersecret',
         isActive: true,
-        company,
-      });
+        companyId,
+      } as Partial<User>);
       await userRepo.save(owner);
-      console.log('[po] Created seed admin user for company', companyId);
+      console.log('[seed-po] Created seed admin user for company', companyId);
     } else {
-      console.log('[po] Using existing user', owner.id);
+      console.log('[seed-po] Using existing user', owner.id);
     }
 
-    // Example PO data — adjust as you like
+    // PO seed shapes (change these if you want)
     const poSeedData: Array<{ items: Array<{ sku: string; qty: number }> }> = [
       {
         items: [
@@ -119,18 +108,11 @@ export async function seed(ds = AppDataSource): Promise<void> {
           { sku: 'SF-1003', qty: 60 },
         ],
       },
-      { items: [{ sku: 'SF-1003', qty: 200 }] },
+      {
+        items: [{ sku: 'SF-1003', qty: 200 }],
+      },
     ];
 
-    /**
-     * Idempotent resolver:
-     * - If exact SKU doesn't exist at all -> create product for this company with that SKU.
-     * - If exact SKU exists and is for this company -> reuse it.
-     * - If exact SKU exists but for another company:
-     *     a) try to find an existing company-derived copy (sku LIKE 'SF-1003-%' AND companyId = ...)
-     *     b) if found -> reuse it
-     *     c) otherwise create a new company-specific copy (unique SKU)
-     */
     async function resolveOrCreateProduct(
       trxProductRepo: Repository<Product>,
       sku: string,
@@ -139,10 +121,10 @@ export async function seed(ds = AppDataSource): Promise<void> {
       supplierIdIn: string,
       companyNameIn?: string,
     ): Promise<Product> {
-      // 1) exact lookup (global or company)
+      // 1) exact lookup anywhere
       const exact = await trxProductRepo.findOne({ where: { sku } });
+
       if (!exact) {
-        // No product exists with this SKU anywhere — create one for this company with the given SKU
         const created = trxProductRepo.create({
           name: nameHint ?? sku,
           sku,
@@ -158,7 +140,7 @@ export async function seed(ds = AppDataSource): Promise<void> {
       // 2) exact exists for the same company -> reuse
       if (exact.companyId === companyIdIn) return exact;
 
-      // 3) exact exists but for another company. Try to find an existing company copy first.
+      // 3) exact exists but for another company -> try company-specific copy
       const existingCopy = await trxProductRepo
         .createQueryBuilder('p')
         .where('p.sku LIKE :pattern', { pattern: `${sku}-%` })
@@ -168,46 +150,47 @@ export async function seed(ds = AppDataSource): Promise<void> {
 
       if (existingCopy) return existingCopy;
 
-      // 4) No existing company copy found — create a new unique company-specific SKU
+      // 4) create a new company-specific SKU copy
       const suffix = shortCompanySuffix(companyIdIn, companyNameIn);
       let candidateSku = `${sku}-${suffix}`;
       let attempt = 0;
-      // ensure unique SKU
       while (await trxProductRepo.findOne({ where: { sku: candidateSku } })) {
         attempt += 1;
         candidateSku = `${sku}-${suffix}-${attempt}`;
       }
 
+      // Use safe property access and defaults (avoid any casts)
+      const barcodeVal = exact?.barcode;
+      const descriptionVal = exact?.description;
+      const unitPriceVal = Number(exact?.unitPrice ?? 0);
+      const unitVal = exact?.unit ?? 'pcs';
+
       const copy = trxProductRepo.create({
         name: nameHint ?? exact.name,
         sku: candidateSku,
-        barcode: exact.barcode,
-        description: exact.description,
-        unitPrice: exact.unitPrice,
+        barcode: barcodeVal,
+        description: descriptionVal,
+        unitPrice: unitPriceVal,
         companyId: companyIdIn,
         supplierId: supplierIdIn,
-        unit: exact.unit ?? 'pcs',
+        unit: unitVal,
       } as Partial<Product>);
       await trxProductRepo.save(copy);
-      console.log(
-        `[po] Created company-specific product ${copy.id} SKU=${copy.sku} (original=${exact.id})`,
-      );
+      console.log(`[seed-po] Created company-specific product SKU=${copy.sku}`);
       return copy;
     }
 
-    // Create POs inside transactions
+    // Create purchase orders inside transactions (idempotent-ish)
     for (const poData of poSeedData) {
-      const orderNumber = `PO-SEED-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-
       await ds.manager.transaction(async (trx) => {
-        const prodRepo: Repository<Product> = trx.getRepository(Product);
-        const stockLevelRepo: Repository<StockLevel> =
-          trx.getRepository(StockLevel);
-        const poRepo: Repository<PurchaseOrder> =
-          trx.getRepository(PurchaseOrder);
-        const poiRepo: Repository<PurchaseOrderItem> =
-          trx.getRepository(PurchaseOrderItem);
+        const prodRepo = trx.getRepository(Product);
+        const stockLevelRepo = trx.getRepository(StockLevel);
+        const poRepo = trx.getRepository(PurchaseOrder);
+        const poiRepo = trx.getRepository(PurchaseOrderItem);
 
+        const orderNumber = `PO-SEED-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+
+        // create PO
         const createdPo = await poRepo.save({
           orderNumber,
           supplier,
@@ -217,6 +200,7 @@ export async function seed(ds = AppDataSource): Promise<void> {
           orderDate: new Date(),
           expectedDate: new Date(Date.now() + 7 * 24 * 3600 * 1000),
           totalAmount: 0,
+          companyId,
         } as Partial<PurchaseOrder>);
 
         let totalNum = 0;
@@ -227,7 +211,7 @@ export async function seed(ds = AppDataSource): Promise<void> {
             sku,
             `Product ${sku}`,
             companyId,
-            supplierId,
+            supplier.id,
             companyName,
           );
 
@@ -241,6 +225,7 @@ export async function seed(ds = AppDataSource): Promise<void> {
             quantity: Number(qty),
             receivedQty: Number(qty),
             unitPrice: unitPriceNum.toFixed(2),
+            companyId,
           } as Partial<PurchaseOrderItem>);
 
           // Update stock level (transactional)
@@ -253,17 +238,6 @@ export async function seed(ds = AppDataSource): Promise<void> {
           });
           const existingQty = Number(existingSl?.quantity ?? 0);
           const newQty = existingQty + Number(qty);
-
-          if (Number.isNaN(newQty)) {
-            throw new Error(
-              `Invalid arithmetic for product ${product.id} (existing=${existingQty} received=${qty})`,
-            );
-          }
-          if (newQty < 0) {
-            throw new Error(
-              `Refusing to set negative stock for product ${product.id} sku=${product.sku}`,
-            );
-          }
 
           if (existingSl) {
             existingSl.quantity = newQty;
@@ -278,7 +252,7 @@ export async function seed(ds = AppDataSource): Promise<void> {
           }
 
           console.log(
-            `[po] stock-update productId=${product.id} sku=${product.sku} existing=${existingQty} received=${qty} new=${newQty}`,
+            `[seed-po] stock-update productId=${product.id} sku=${product.sku} new=${newQty}`,
           );
         }
 
@@ -287,32 +261,31 @@ export async function seed(ds = AppDataSource): Promise<void> {
           totalAmount: totalNum,
           status: PurchaseOrderStatus.RECEIVED,
         } as Partial<PurchaseOrder>);
+
         console.log(
-          `[po] ✅ Created PO ${orderNumber} with total ${totalNum.toFixed(2)}`,
+          `[seed-po] Created PO ${createdPo.orderNumber} total ${totalNum.toFixed(2)}`,
         );
       });
     }
 
-    console.log('[po] Purchase order seeding complete');
-    return;
+    console.log('[seed-po] seeding complete');
   } catch (err) {
-    console.error('[po] Purchase order seed failed:', err);
+    console.error('[seed-po] Purchase order seed failed:', err);
     process.exitCode = 1;
-    return;
   } finally {
     try {
       if (mustDestroy && ds.isInitialized) await ds.destroy();
     } catch (destroyErr) {
-      console.warn('[po] Error while destroying datasource:', destroyErr);
+      console.warn('[seed-po] Error while destroying datasource:', destroyErr);
     }
   }
 }
 
-// runnable directly
+// If run directly with node/ts-node
 if (require.main === module) {
-  console.log('[seed-purchase-orders] running as script — starting seed()');
-  seed().catch((err) => {
-    console.error('[seed-purchase-orders] Unhandled error:', err);
+  console.log('[seed-purchase-orders] starting seed()');
+  seed().catch((e) => {
+    console.error('[seed-purchase-orders] unhandled error', e);
     process.exit(1);
   });
 }

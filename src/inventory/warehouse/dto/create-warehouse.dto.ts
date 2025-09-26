@@ -1,8 +1,11 @@
 // src/inventory/warehouse/dto/create-warehouse.dto.ts
-import { IsString, IsUUID, IsOptional } from 'class-validator';
+import { IsString, IsOptional } from 'class-validator';
 
 export class CreateWarehouseDto {
-  @IsString() name!: string;
-  @IsString() @IsOptional() address?: string;
-  @IsUUID() companyId!: string;
+  @IsString()
+  name!: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
 }

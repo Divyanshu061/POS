@@ -28,6 +28,9 @@ export class Dashboard {
   @JoinColumn({ name: 'company_id' })
   company!: Company;
 
+  @Column({ name: 'company_id', type: 'uuid', nullable: false })
+  companyId!: string;
+
   @OneToMany(() => DashboardWidget, (widget) => widget.dashboard, {
     cascade: true,
   })

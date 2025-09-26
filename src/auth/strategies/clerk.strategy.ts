@@ -29,7 +29,9 @@ export class ClerkStrategy extends PassportStrategy(Strategy, 'clerk') {
     const issuer = process.env.CLERK_ISSUER;
 
     if (!jwksUri || !audience || !issuer) {
-      throw new Error('Missing environment variables for Clerk: CLERK_JWKS_URI, CLERK_AUDIENCE, or CLERK_ISSUER');
+      throw new Error(
+        'Missing environment variables for Clerk: CLERK_JWKS_URI, CLERK_AUDIENCE, or CLERK_ISSUER',
+      );
     }
 
     const options: StrategyOptions = {

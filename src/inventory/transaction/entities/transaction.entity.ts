@@ -1,5 +1,4 @@
 // src/inventory/transaction/entities/transaction.entity.ts
-
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -75,6 +74,10 @@ export class Transaction {
   @Column({ type: 'varchar', length: 255, nullable: true })
   reference?: string;
 
+  /** Who created this transaction (user id) */
+  @Column({ type: 'uuid' })
+  createdBy!: string;
+
   /** When this transaction was created */
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
@@ -83,9 +86,9 @@ export class Transaction {
   @UpdateDateColumn({ type: 'timestamptz' })
   updatedAt!: Date;
 
-  /** Relation IDs for quick access without loading entities */
+  /** Relation IDs - typed appropriately */
   @RelationId((transaction: Transaction) => transaction.product)
-  readonly productIdRelation!: string;
+  readonly productIdRelation!: number;
 
   @RelationId((transaction: Transaction) => transaction.warehouse)
   readonly warehouseIdRelation!: string;

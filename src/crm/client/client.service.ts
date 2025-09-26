@@ -1,16 +1,21 @@
-//src/crm/client/client.service.ts
+// src/crm/client/client.service.ts
 import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull, QueryFailedError } from 'typeorm';
+import { Repository, IsNull, QueryFailedError, In, DeepPartial } from 'typeorm';
 import { Client } from './entities/client.entity';
 import { Tag } from '../tag/entities/tag.entity';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
+
+// Adjust these import paths if your project places User/Company elsewhere
+import { User } from '../../entities/user.entity';
+import { Company } from '../../inventory/company/entities/company.entity';
 
 @Injectable()
 export class ClientService {
@@ -21,50 +26,78 @@ export class ClientService {
     private readonly tagRepo: Repository<Tag>,
   ) {}
 
-  async create(dto: CreateClientDto, ownerId: string): Promise<Client> {
-    const tags =
-      dto.tags && dto.tags.length ? await this.tagRepo.findByIds(dto.tags) : [];
+  /**
+   * Create client under the provided company and owner.
+   */
+  async create(
+    dto: CreateClientDto,
+    ownerId: string,
+    companyId: string,
+  ): Promise<Client> {
+    if (!companyId) {
+      throw new BadRequestException('companyId is required');
+    }
 
-    const client = this.clientRepo.create({
-      ...dto,
-      ownerId,
+    const tags =
+      dto.tags && dto.tags.length
+        ? await this.tagRepo.find({ where: { id: In(dto.tags) } })
+        : [];
+
+    const clientPayload: DeepPartial<Client> = {
+      name: dto.name,
+      title: dto.title,
+      email: dto.email,
+      phone: dto.phone,
+      status: dto.status,
       tags,
-    });
+      // set tenant explicitly
+      company: { id: companyId } as DeepPartial<Company>,
+      // set owner relation by id
+      owner: { id: ownerId } as DeepPartial<User>,
+    };
+
+    const client = this.clientRepo.create(clientPayload);
+
     try {
       return await this.clientRepo.save(client);
-    } catch (err) {
-      // Detect the unique‐constraint on owner+email
+    } catch (err: unknown) {
+      // Narrow error safely
+      let message: string = 'Unknown error';
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (typeof err === 'string') {
+        message = err;
+      }
+
+      // If it's a QueryFailedError or DB index error → conflict
       if (
-        err instanceof QueryFailedError &&
-        err.message.includes('IDX_clients_owner_email')
+        err instanceof QueryFailedError ||
+        message.includes('IDX_clients_owner_email')
       ) {
         throw new ConflictException(
-          `A client with email "${dto.email}" already exists.`,
+          `A client with email "${dto.email}" already exists in this company.`,
         );
       }
-      throw err; // re‑throw anything else
+
+      throw err;
     }
   }
 
+  /**
+   * List clients for a given owner + company (paginated).
+   */
   async findAll(
     query: ListClientsDto,
     ownerId: string,
+    companyId: string,
   ): Promise<{ data: Client[]; total: number }> {
-    const {
-      page,
-      limit,
-      status,
-      search,
-      company,
-      createdFrom,
-      createdTo,
-      tag,
-    } = query;
+    const { page, limit, status, search, createdFrom, createdTo, tag } = query;
 
     const qb = this.clientRepo
       .createQueryBuilder('client')
       .where('client.deletedAt IS NULL')
       .andWhere('client.ownerId = :ownerId', { ownerId })
+      .andWhere('client.companyId = :companyId', { companyId })
       .skip((page - 1) * limit)
       .take(limit);
 
@@ -78,10 +111,6 @@ export class ClientService {
       });
     }
 
-    if (company) {
-      qb.andWhere('client.company ILIKE :company', { company: `%${company}%` });
-    }
-
     if (createdFrom) {
       qb.andWhere('client.createdAt >= :from', { from: createdFrom });
     }
@@ -91,16 +120,25 @@ export class ClientService {
     }
 
     if (tag) {
-      qb.andWhere(':tag = ANY(client.tags)', { tag });
+      qb.leftJoin('client.tags', 'tag').andWhere('tag.id = :tag', { tag });
+    } else {
+      qb.leftJoinAndSelect('client.tags', 'tag');
     }
 
     const [clients, total] = await qb.getManyAndCount();
     return { data: clients, total };
   }
 
-  async findOne(id: string, ownerId: string): Promise<Client> {
+  /**
+   * Get single client scoped by owner + company.
+   */
+  async findOne(
+    id: string,
+    ownerId: string,
+    companyId: string,
+  ): Promise<Client> {
     const client = await this.clientRepo.findOne({
-      where: { id, ownerId, deletedAt: IsNull() },
+      where: { id, ownerId, companyId, deletedAt: IsNull() },
       relations: ['tags'],
     });
     if (!client) {
@@ -109,27 +147,43 @@ export class ClientService {
     return client;
   }
 
+  /**
+   * Update (full or partial) — tenant enforced.
+   */
   async update(
     id: string,
     dto: UpdateClientDto,
     ownerId: string,
+    companyId: string,
   ): Promise<Client> {
-    const client = await this.findOne(id, ownerId);
+    const client = await this.findOne(id, ownerId, companyId);
 
     if (dto.tags) {
-      client.tags = await this.tagRepo.findByIds(dto.tags);
+      client.tags =
+        dto.tags && dto.tags.length
+          ? await this.tagRepo.find({ where: { id: In(dto.tags) } })
+          : [];
     }
 
-    // Merge all other fields, excluding tags
     const rest = { ...dto } as Partial<Client>;
     delete rest.tags;
     Object.assign(client, rest);
 
+    // Ensure client stays under same tenant
+    client.companyId = companyId;
+
     return this.clientRepo.save(client);
   }
 
-  async remove(id: string, ownerId: string): Promise<void> {
-    const result = await this.clientRepo.softDelete({ id, ownerId });
+  /**
+   * Soft delete scoped by owner + company.
+   */
+  async remove(id: string, ownerId: string, companyId: string): Promise<void> {
+    const result = await this.clientRepo.softDelete({
+      id,
+      ownerId,
+      companyId,
+    });
     if (result.affected === 0) {
       throw new NotFoundException(`Client ${id} not found`);
     }

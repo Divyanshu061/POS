@@ -9,11 +9,14 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   JoinColumn,
+  BeforeInsert,
+  BeforeUpdate,
 } from 'typeorm';
 import { Warehouse } from '../../warehouse/entities/warehouse.entity';
 import { Client } from '../../../crm/client/entities/client.entity';
 import { SaleItem } from './sale-item.entity';
 import { PaymentMethod } from '../../sales/dto/create-sale.dto';
+import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
 
 @Entity('sales')
 export class Sale {
@@ -42,13 +45,21 @@ export class Sale {
   @Column('int')
   totalQuantity!: number;
 
-  @Column('decimal', { precision: 12, scale: 2 })
+  @Column('decimal', {
+    precision: 12,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   totalAmount!: number;
 
   @Column('enum', { enum: PaymentMethod })
   paymentMethod!: PaymentMethod;
 
-  @Column('decimal', { precision: 12, scale: 2 })
+  @Column('decimal', {
+    precision: 12,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   amountPaid!: number;
 
   @Column('text', { nullable: true })
@@ -67,4 +78,13 @@ export class Sale {
     eager: true,
   })
   items!: SaleItem[];
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  propagateCompanyToItems() {
+    if (!this.items || !this.companyId) return;
+    for (const it of this.items) {
+      it.companyId = this.companyId;
+    }
+  }
 }

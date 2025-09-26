@@ -126,17 +126,26 @@ async function main() {
   // 6) Seed Inventory: Suppliers
   const supplierRepo = ds.getRepository(Supplier);
   const sups = [
-    { name: 'Acme Corp.', contactInfo: 'sales@acme.local' },
-    { name: 'Global Supplies', contactInfo: 'info@global.sup' },
+    {
+      name: 'Acme Corp.',
+      email: 'sales@acme.local',
+      contactNumber: '1234567890',
+    },
+    {
+      name: 'Global Supplies',
+      email: 'info@global.sup',
+      contactNumber: '9876543210',
+    },
   ];
-  for (const { name, contactInfo } of sups) {
+  for (const { name, email, contactNumber } of sups) {
     let s = await supplierRepo.findOne({
       where: { name, companyId: defaultCompanyId },
     });
     if (!s) {
       s = supplierRepo.create({
         name,
-        contactInfo,
+        email,
+        contactNumber,
         companyId: defaultCompanyId,
       });
       await supplierRepo.save(s);

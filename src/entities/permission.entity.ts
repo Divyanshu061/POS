@@ -1,5 +1,6 @@
 // src/entities/permission.entity.ts
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToMany } from 'typeorm';
+import { Role } from './role.entity';
 
 @Entity({ name: 'permissions' })
 export class Permission {
@@ -11,4 +12,7 @@ export class Permission {
 
   @Column({ nullable: true })
   description?: string;
+
+  @ManyToMany(() => Role, (role) => role.permissions)
+  roles!: Role[];
 }

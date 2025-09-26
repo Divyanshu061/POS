@@ -1,5 +1,4 @@
 // src/inventory/product/entities/product.entity.ts
-
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -41,18 +40,11 @@ export class Product {
   @Column('decimal', { precision: 10, scale: 2, default: 0 })
   unitPrice!: number;
 
-  /**
-   * Optional additional product info
-   */
   @Column({ nullable: true })
   productNumber?: string;
 
   @Column({ nullable: true })
   unit?: string; // e.g. 'pcs', 'kg', 'litre', etc.
-
-  // ─────── Foreign Key Fields ───────
-  @Column('uuid')
-  companyId!: string;
 
   @Column('uuid', { nullable: true })
   categoryId?: string;
@@ -60,9 +52,16 @@ export class Product {
   @Column('uuid', { nullable: true })
   supplierId?: string;
 
-  // ─────── Relations ───────
+  /**
+   * Explicit companyId column for multi-tenancy.
+   * Keep the relation for convenience, but always filter using companyId in queries.
+   */
+  @Column('uuid', { name: 'companyId', nullable: false })
+  companyId!: string;
+
   @ManyToOne(() => Company, (company) => company.products, {
     onDelete: 'CASCADE',
+    nullable: false,
   })
   @JoinColumn({ name: 'companyId' })
   company!: Company;

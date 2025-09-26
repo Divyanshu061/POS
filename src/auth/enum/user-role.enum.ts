@@ -1,12 +1,9 @@
-// src/auth/user-role.enum.ts
+// src/auth/enum/user-role.enum.ts
 
-/**
- * Defines application user roles for RBAC guards and decorators,
- * matching the names stored in the database.
- */
 export enum UserRole {
+  SUPER_ADMIN = 'super_admin',
+  ADMIN = 'admin',
   SALES_REP = 'sales_rep',
   STORE_MANAGER = 'store_manager',
-  ADMIN = 'admin',
   // add more roles exactly as they appear in the `roles` table
 }

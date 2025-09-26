@@ -14,14 +14,17 @@ export class TransactionService {
     private readonly repo: Repository<Transaction>,
   ) {}
 
-  async create(dto: CreateTransactionDto): Promise<Transaction> {
+  async create(
+    dto: CreateTransactionDto,
+    companyId: string,
+  ): Promise<Transaction> {
     const tx = this.repo.create({
-      companyId: dto.companyId,
       productId: dto.productId,
       warehouseId: dto.warehouseId,
       type: dto.type,
       quantity: dto.quantity,
       reference: dto.reference,
+      companyId, // ✅ now passed as argument
     });
     return this.repo.save(tx);
   }
@@ -35,23 +38,31 @@ export class TransactionService {
     });
   }
 
-  async findOne(id: string): Promise<Transaction> {
-    const tx = await this.repo.findOne({ where: { id } });
-    if (!tx) throw new NotFoundException(`Transaction ${id} not found`);
+  // Get single transaction, scoped by company
+  async findOne(id: string, companyId: string): Promise<Transaction> {
+    const tx = await this.repo.findOne({ where: { id, companyId } });
+    if (!tx)
+      throw new NotFoundException(
+        `Transaction ${id} not found for your company`,
+      );
     return tx;
   }
 
-  async update(id: string, dto: UpdateTransactionDto): Promise<Transaction> {
-    const tx = await this.findOne(id);
-    if (dto.type !== undefined) tx.type = dto.type;
-    if (dto.quantity !== undefined) tx.quantity = dto.quantity;
-    if ('reference' in dto) tx.reference = dto.reference!;
+  async update(
+    id: string,
+    dto: UpdateTransactionDto,
+    companyId: string,
+  ): Promise<Transaction> {
+    const tx = await this.findOne(id, companyId);
+    Object.assign(tx, dto);
     return this.repo.save(tx);
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.repo.delete(id);
+  async remove(id: string, companyId: string): Promise<void> {
+    const result = await this.repo.delete({ id, companyId });
     if (!result.affected)
-      throw new NotFoundException(`Transaction ${id} not found`);
+      throw new NotFoundException(
+        `Transaction ${id} not found for your company`,
+      );
   }
 }

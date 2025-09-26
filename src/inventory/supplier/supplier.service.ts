@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { Supplier } from './entities/supplier.entity';
 import { CreateSupplierDto } from './dto/create-supplier.dto';
 import { UpdateSupplierDto } from './dto/update-supplier.dto';
+import { Company } from '../company/entities/company.entity';
 
 @Injectable()
 export class SupplierService {
@@ -12,27 +13,46 @@ export class SupplierService {
     private readonly repo: Repository<Supplier>,
   ) {}
 
-  create(dto: CreateSupplierDto): Promise<Supplier> {
-    const s = this.repo.create(dto);
-    return this.repo.save(s);
+  async create(dto: CreateSupplierDto, companyId: string): Promise<Supplier> {
+    const supplier = this.repo.create({
+      ...dto,
+      company: { id: companyId } as Company, // typed instead of `any`
+    });
+    return this.repo.save(supplier);
   }
 
-  findAll(companyId: string): Promise<Supplier[]> {
-    return this.repo.find({ where: { companyId } });
+  async findAll(companyId: string): Promise<Supplier[]> {
+    return this.repo.find({
+      where: { company: { id: companyId } },
+      relations: ['company'],
+      order: { createdAt: 'DESC' },
+    });
   }
 
-  async findOne(id: string): Promise<Supplier> {
-    const s = await this.repo.findOne({ where: { id } });
-    if (!s) throw new NotFoundException(`Supplier ${id} not found`);
-    return s;
+  async findOne(id: string, companyId: string): Promise<Supplier> {
+    const supplier = await this.repo.findOne({
+      where: { id, company: { id: companyId } },
+      relations: ['company'],
+    });
+
+    if (!supplier) {
+      throw new NotFoundException(`Supplier ${id} not found for this company`);
+    }
+    return supplier;
   }
 
-  async update(id: string, dto: UpdateSupplierDto): Promise<Supplier> {
-    await this.repo.update(id, dto);
-    return this.findOne(id);
+  async update(
+    id: string,
+    dto: UpdateSupplierDto,
+    companyId: string,
+  ): Promise<Supplier> {
+    const supplier = await this.findOne(id, companyId);
+    Object.assign(supplier, dto);
+    return this.repo.save(supplier);
   }
 
-  async remove(id: string): Promise<void> {
-    await this.repo.delete(id);
+  async remove(id: string, companyId: string): Promise<void> {
+    const supplier = await this.findOne(id, companyId);
+    await this.repo.remove(supplier);
   }
 }

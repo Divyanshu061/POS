@@ -36,8 +36,15 @@ import { CrmModule } from './crm/crm.module';
 
 // --- Payment & Invoice module ---
 import { PaymentInvoiceModule } from './payment-invoice/payment-invoice.module';
+
+import { CacheModule } from '@nestjs/cache-manager';
+
 @Module({
   imports: [
+    CacheModule.register({
+      ttl: 30, // seconds
+      max: 1000,
+    }),
     // ─── 1) Env variables ───────────────────────────────────────────────
     ConfigModule.forRoot({
       isGlobal: true,

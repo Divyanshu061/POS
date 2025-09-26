@@ -60,6 +60,12 @@ export class StockLevel {
   @Column('int', { default: 10 })
   reorderLevel!: number;
 
+  @Column({ type: 'uuid', nullable: true })
+  createdBy?: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  updatedBy?: string;
+
   // ─── Audit Fields ───────────────────────────────────────────────────────
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

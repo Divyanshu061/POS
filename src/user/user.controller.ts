@@ -1,5 +1,4 @@
 // src/user/user.controller.ts
-
 import {
   Controller,
   Post,
@@ -13,7 +12,13 @@ import {
   Inject,
   forwardRef,
   UseGuards,
+  NotFoundException,
+  BadRequestException,
+  HttpCode,
+  HttpStatus,
+  Delete,
 } from '@nestjs/common';
+
 import {
   ApiTags,
   ApiBearerAuth,
@@ -31,9 +36,10 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
-import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CurrentUser } from '../auth/decorators/current-user-id.decorator';
 
 import { UserResponseDto } from '../auth/dto/user-response.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @ApiTags('Users')
 @Controller('users')
@@ -72,7 +78,6 @@ export class UsersController {
     return new UserResponseDto(complete);
   }
 
-  @Public()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({
@@ -109,6 +114,46 @@ export class UsersController {
     const users = await this.userService.findAll();
     return users.map((u) => new UserResponseDto(u));
   }
+
+  // ---------- NEW: GET /users/:id ----------
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get a user by ID (self or admin)' })
+  @ApiResponse({
+    status: 200,
+    description: 'User found',
+    type: UserResponseDto,
+  })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Get(':id')
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('userId') meId: string | null,
+    @CurrentUser('roles') myRoles: string[] | null,
+  ): Promise<UserResponseDto> {
+    // allow self
+    if (meId === id) {
+      const user = await this.userService.findOne(id);
+      return new UserResponseDto(user);
+    }
+
+    // normalize roles and allow admin/superadmin
+    const normalized = Array.isArray(myRoles)
+      ? myRoles.map((r) =>
+          String(r)
+            .toLowerCase()
+            .replace(/[\W_]+/g, ''),
+        )
+      : [];
+
+    if (normalized.includes('admin') || normalized.includes('superadmin')) {
+      const user = await this.userService.findOne(id);
+      return new UserResponseDto(user);
+    }
+
+    this.logger.warn(`User ${meId} forbidden to fetch ${id}`);
+    throw new ForbiddenException('Not allowed to access this user');
+  }
+  // ---------- END NEW ----------
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Update a user (self or admin)' })
@@ -154,7 +199,103 @@ export class UsersController {
     @Body() dto: AssignRolesDto,
   ): Promise<UserResponseDto> {
     this.logger.log(`Assigning roles to user ${id}`);
-    const user = await this.userService.assignRoles(id, dto);
-    return new UserResponseDto(user);
+
+    // Prefer explicit roleIds if provided
+    let roleIds: string[] | undefined = dto.roleIds;
+
+    // If roleIds missing, resolve from roleNames (client-friendly)
+    if ((!roleIds || roleIds.length === 0) && dto.roleNames?.length) {
+      const roles = await this.roleService.findByNames(dto.roleNames);
+      if (roles.length !== dto.roleNames.length) {
+        throw new NotFoundException('One or more role names not found');
+      }
+      roleIds = roles.map((r) => r.id);
+    }
+
+    // Final validation: we must have roleIds
+    if (!roleIds || roleIds.length === 0) {
+      throw new BadRequestException(
+        'roleIds or roleNames (resolving to roleIds) are required',
+      );
+    }
+
+    // call service with normalized roleIds
+    const user = await this.userService.assignRoles(id, { roleIds });
+    // ensure returned user contains relations (service may return saved entity)
+    const full = await this.userService.findOne(user.id);
+    return new UserResponseDto(full);
+  }
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft-delete a user (self or admin)' })
+  @ApiResponse({ status: 204, description: 'User soft-deleted' })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('userId') meId: string | null,
+    @CurrentUser('roles') myRoles: string[] | null,
+  ): Promise<void> {
+    if (!meId || !myRoles) {
+      this.logger.warn(`Unauthorized delete attempt`);
+      throw new ForbiddenException('Not authenticated');
+    }
+
+    // allow self
+    if (meId === id) {
+      this.logger.log(`User ${meId} requested self-delete for ${id}`);
+      await this.userService.remove(id);
+      return;
+    }
+
+    // normalize roles and allow admin/superadmin
+    const normalized = Array.isArray(myRoles)
+      ? myRoles.map((r) =>
+          String(r)
+            .toLowerCase()
+            .replace(/[\W_]+/g, ''),
+        )
+      : [];
+
+    if (normalized.includes('admin') || normalized.includes('superadmin')) {
+      this.logger.log(`Admin ${meId} deleting user ${id}`);
+      await this.userService.remove(id);
+      return;
+    }
+
+    this.logger.warn(`User ${meId} forbidden to delete ${id}`);
+    throw new ForbiddenException('Not allowed to delete this user');
+  }
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Change user password (self or admin reset)' })
+  @ApiResponse({ status: 204, description: 'Password changed' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid input or current password wrong',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Post(':id/change-password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async changePassword(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ChangePasswordDto,
+    @CurrentUser('userId') meId: string | null,
+    @CurrentUser('roles') myRoles: string[] | null,
+  ): Promise<void> {
+    if (!meId || !myRoles) {
+      this.logger.warn(`Unauthorized change-password attempt`);
+      throw new ForbiddenException('Not authenticated');
+    }
+
+    await this.userService.changePassword(
+      id,
+      { currentPassword: dto.currentPassword, newPassword: dto.newPassword },
+      meId,
+      myRoles,
+    );
   }
 }

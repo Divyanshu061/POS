@@ -1,39 +1,65 @@
 // src/inventory/audit-log/middleware/audit.middleware.ts
-
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { DataSource, QueryRunner } from 'typeorm';
 
-// Extend the Request interface to include authenticated user info and the QueryRunner
 declare module 'express-serve-static-core' {
   interface Request {
-    user?: { userId: string };
+    user?: { userId: string; companyId?: string | null };
     queryRunner?: QueryRunner;
   }
 }
 
 @Injectable()
 export class AuditMiddleware implements NestMiddleware {
+  private readonly logger = new Logger(AuditMiddleware.name);
+
   constructor(private dataSource: DataSource) {}
 
-  async use(req: Request, _res: Response, next: NextFunction) {
-    // Create a new QueryRunner for this request context
-    const queryRunner: QueryRunner = this.dataSource.createQueryRunner();
+  async use(req: Request, res: Response, next: NextFunction) {
+    let queryRunner: QueryRunner | undefined;
+    try {
+      queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
 
-    // Attach userId to runner.data if available
-    if (req.user?.userId) {
-      queryRunner.data = {
-        ...(queryRunner.data ?? {}),
-        userId: req.user.userId,
-      };
+      if (req.user?.userId) {
+        queryRunner.data = {
+          ...(queryRunner.data ?? {}),
+          userId: req.user.userId,
+          companyId: req.user.companyId ?? null,
+        };
+      }
+
+      req.queryRunner = queryRunner;
+    } catch (err) {
+      // use the error when logging to avoid "defined but never used"
+      this.logger.warn(
+        'Failed to create QueryRunner for audit middleware — continuing without it',
+        (err as Error).message,
+      );
     }
 
-    // Store the runner on the request for later retrieval in subscribers
-    req.queryRunner = queryRunner;
+    // release runner after response finishes/closes — wrap cleanup invocation so handlers don't return Promise
+    const cleanup = async () => {
+      if (req.queryRunner) {
+        try {
+          await req.queryRunner.release();
+        } catch (releaseErr) {
+          this.logger.error(
+            'Failed to release QueryRunner',
+            releaseErr as Error,
+          );
+        } finally {
+          req.queryRunner = undefined;
+        }
+      }
+    };
 
-    await queryRunner.connect().catch(() => {
-      // If connection fails, skip attaching the runner
-      return;
+    res.on('finish', () => {
+      void cleanup();
+    });
+    res.on('close', () => {
+      void cleanup();
     });
 
     next();

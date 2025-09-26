@@ -1,5 +1,4 @@
 // src/auth/decorators/company.decorator.ts
-
 import {
   createParamDecorator,
   ExecutionContext,

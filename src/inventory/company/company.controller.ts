@@ -11,9 +11,10 @@ import {
   ValidationPipe,
   ParseUUIDPipe,
 } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { UserRole } from '../../auth/enum/user-role.enum';
 
 import { CompanyService } from './company.service';
 import { CreateCompanyDto } from './dto/create-company.dto';
@@ -27,9 +28,11 @@ import { UpdateCompanyDto } from './dto/update-company.dto';
  * - Delete companies
  *
  * All routes are protected by JWT authentication and role-based authorization.
+ * Only users with the SUPER_ADMIN role can access these endpoints.
  */
 @Controller('inventory/companies')
-@UseGuards(AuthGuard('jwt'), RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.SUPER_ADMIN)
 export class CompanyController {
   constructor(private readonly service: CompanyService) {}
 
@@ -38,7 +41,6 @@ export class CompanyController {
    * POST /inventory/companies
    */
   @Post()
-  @Roles('admin')
   create(
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: CreateCompanyDto,
@@ -51,7 +53,6 @@ export class CompanyController {
    * GET /inventory/companies
    */
   @Get()
-  @Roles('admin', 'store_manager')
   findAll() {
     return this.service.findAll();
   }
@@ -61,7 +62,6 @@ export class CompanyController {
    * GET /inventory/companies/:id
    */
   @Get(':id')
-  @Roles('admin', 'store_manager')
   findOne(
     @Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 }))
     id: string,
@@ -74,7 +74,6 @@ export class CompanyController {
    * PATCH /inventory/companies/:id
    */
   @Patch(':id')
-  @Roles('admin')
   update(
     @Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 }))
     id: string,
@@ -89,7 +88,6 @@ export class CompanyController {
    * DELETE /inventory/companies/:id
    */
   @Delete(':id')
-  @Roles('admin')
   remove(
     @Param('id', new ParseUUIDPipe({ errorHttpStatusCode: 400 }))
     id: string,

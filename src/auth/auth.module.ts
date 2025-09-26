@@ -1,6 +1,7 @@
 // src/auth/auth.module.ts
 
 import { Module, forwardRef } from '@nestjs/common';
+import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
@@ -13,6 +14,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { LocalStrategy } from './strategies/local.strategy';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
+import { CompanyScopeGuard } from './guards/company-scope.guard';
+import { TenantGuard } from './guards/tenant.guard';
 
 import { UserModule } from '../user/user.module';
 import { RolesModule } from '../roles/roles.module';
@@ -50,6 +53,7 @@ import { Permission } from '../entities/permission.entity';
         signOptions: { expiresIn: config.get<string>('JWT_EXPIRATION') },
       }),
     }),
+    CacheModule.register(),
   ],
   controllers: [AuthController],
   providers: [
@@ -59,7 +63,9 @@ import { Permission } from '../entities/permission.entity';
 
     // Apply JWTAuthGuard and RolesGuard globally
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: CompanyScopeGuard },
   ],
   exports: [AuthService, JwtModule],
 })

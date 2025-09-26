@@ -8,6 +8,7 @@ import {
   IsArray,
   ArrayNotEmpty,
   ArrayUnique,
+  IsUUID,
 } from 'class-validator';
 
 export class SignUpDto {
@@ -30,6 +31,9 @@ export class SignUpDto {
   @ArrayUnique()
   @IsString({ each: true })
   roleIds?: string[];
+
+  @IsUUID('4')
+  companyId!: string;
 
   /**
    * Optional: assign roles by their human-readable names.

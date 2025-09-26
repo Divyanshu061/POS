@@ -9,6 +9,8 @@ import {
 } from 'typeorm';
 import { Sale } from './sale.entity';
 import { Product } from '../../product/entities/product.entity';
+import { decimalTransformer } from '../../../common/transformers/decimal.transformer';
+import { Company } from '../../company/entities/company.entity';
 
 @Entity('sale_items')
 export class SaleItem {
@@ -26,6 +28,13 @@ export class SaleItem {
   @JoinColumn({ name: 'saleId' })
   sale!: Sale;
 
+  @ManyToOne(() => Company)
+  @JoinColumn({ name: 'company_id' })
+  company?: Company;
+
+  @Column({ name: 'company_id', type: 'uuid', nullable: false })
+  companyId!: string;
+
   // --- Foreign Key: Product ---
   @Column('int')
   productId!: number;
@@ -41,6 +50,10 @@ export class SaleItem {
   @Column('int')
   quantity!: number;
 
-  @Column('decimal', { precision: 10, scale: 2 })
+  @Column('decimal', {
+    precision: 10,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   unitPrice!: number;
 }

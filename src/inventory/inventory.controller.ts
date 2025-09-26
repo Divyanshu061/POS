@@ -132,9 +132,8 @@ export class InventoryController {
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: AdjustStockDto,
   ): Promise<StockLevel> {
-    return this.stockSvc
-      .adjustStock({ ...dto, companyId })
-      .then((res) => res.stock);
+    // call stock-level service with the correct signature: (dto, companyId)
+    return this.stockSvc.adjustStock(dto, companyId).then((res) => res.stock);
   }
 
   /**

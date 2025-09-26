@@ -4,5 +4,8 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   roles: string[];
+  permissions?: string[];
+  companyId?: string | null;
+  tokenVersion?: number;
   // Add more fields if needed
 }

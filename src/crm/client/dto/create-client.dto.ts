@@ -18,14 +18,6 @@ export class CreateClientDto {
   name!: string;
 
   @ApiPropertyOptional({
-    example: 'ACME International',
-    description: 'Company name (optional)',
-  })
-  @IsOptional()
-  @IsString()
-  company?: string;
-
-  @ApiPropertyOptional({
     example: 'CTO',
     description: 'Client title or designation',
   })
@@ -58,8 +50,8 @@ export class CreateClientDto {
 
   @ApiPropertyOptional({
     type: [String],
-    example: ['lead', 'vip'],
-    description: 'Tags to categorize clients',
+    example: ['uuid-of-tag-1', 'uuid-of-tag-2'],
+    description: 'Tag IDs to categorize clients',
   })
   @IsArray()
   @ArrayUnique()

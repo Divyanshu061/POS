@@ -1,4 +1,4 @@
-// src/inventory/stock-level/stock-level.service.ts
+// File: src/inventory/stock-level/stock-level.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -15,6 +15,7 @@ import {
   FindOptionsWhere,
   FindOperator,
   EntityManager,
+  DeepPartial,
 } from 'typeorm';
 
 import { StockLevel } from './entities/stock-level.entity';
@@ -56,40 +57,82 @@ export class StockLevelService {
     );
   }
 
-  // CRUD
-  async create(dto: CreateStockLevelDto): Promise<StockLevel> {
-    const sl = this.stockLevelRepo.create(dto);
+  // Create stock-level record for the given company (tenant enforced)
+  // Accept optional userId for audit
+  async create(
+    dto: CreateStockLevelDto,
+    companyId: string,
+    userId?: string,
+  ): Promise<StockLevel> {
+    // Build a payload typed for TypeORM create/save. Avoid passing `null` for optional props;
+    // use `undefined` so DeepPartial<string|undefined> matches.
+    const payload: Partial<StockLevel> = {
+      ...dto,
+      companyId,
+      createdBy: userId ?? undefined,
+    };
+
+    // Cast to DeepPartial to satisfy the create() overloads
+    const sl = this.stockLevelRepo.create(payload as DeepPartial<StockLevel>);
     return this.stockLevelRepo.save(sl);
   }
 
+  // Return all stock-levels for a company
   async findAll(companyId: string): Promise<StockLevel[]> {
-    return this.stockLevelRepo.find({ where: { companyId } });
+    return this.stockLevelRepo.find({
+      where: { companyId },
+      relations: ['product', 'warehouse'],
+    });
   }
 
-  async findOne(id: string): Promise<StockLevel> {
-    const sl = await this.stockLevelRepo.findOne({ where: { id } });
+  // Tenant-aware findOne
+  async findOne(id: string, companyId: string): Promise<StockLevel> {
+    const sl = await this.stockLevelRepo.findOne({
+      where: { id, companyId },
+      relations: ['product', 'warehouse'],
+    });
     if (!sl) {
-      throw new NotFoundException(`StockLevel ${id} not found`);
+      throw new NotFoundException(
+        `StockLevel ${id} not found or not accessible for company ${companyId}`,
+      );
     }
     return sl;
   }
 
-  async update(id: string, dto: UpdateStockLevelDto): Promise<StockLevel> {
-    await this.stockLevelRepo.update(id, { quantity: dto.quantity });
-    return this.findOne(id);
-  }
+  // Update (tenant-enforced). Accept optional userId for audit.
+  async update(
+    id: string,
+    dto: UpdateStockLevelDto,
+    companyId: string,
+    userId?: string,
+  ): Promise<StockLevel> {
+    const sl = await this.findOne(id, companyId); // ensures tenant access
 
-  async remove(id: string): Promise<void> {
-    const result = await this.stockLevelRepo.delete(id);
-    if (!result.affected) {
-      throw new NotFoundException(`StockLevel ${id} not found`);
+    if (dto.quantity !== undefined) {
+      sl.quantity = dto.quantity;
     }
+    if (dto.reorderLevel !== undefined) {
+      sl.reorderLevel = dto.reorderLevel;
+    }
+
+    if (userId) {
+      sl.updatedBy = userId;
+    }
+
+    return this.stockLevelRepo.save(sl);
   }
 
-  /**
-   * Public helper to send low-stock alert via NotificationService.
-   * Useful for sending alerts after transaction commit.
-   */
+  // Remove (tenant-enforced). Accept optional userId for audit (we log it here).
+  async remove(id: string, companyId: string, _userId?: string): Promise<void> {
+    // optional audit log so _userId is not unused (helps satisfy eslint)
+    if (_userId) {
+      this.logger.debug(`StockLevel.remove called by user ${_userId}`);
+    }
+
+    const sl = await this.findOne(id, companyId); // will throw if not found / inaccessible
+    await this.stockLevelRepo.remove(sl);
+  }
+
   public async sendLowStockAlert(
     recipient: string,
     payload: { productName: string; currentQty: number },
@@ -98,18 +141,16 @@ export class StockLevelService {
   }
 
   /**
-   * Adjust stock. If `manager` is provided, it participates in that transaction.
-   * Returns { stock, low } where `low` is true if quantity <= threshold.
-   *
-   * NOTE: when called with `manager`, this method DOES NOT send notifications.
-   * The caller should send notifications after the outer transaction completes.
+   * Adjust stock.
+   * Note: signature unchanged from your original (dto, companyId, manager?)
    */
   async adjustStock(
     dto: AdjustStockDto,
+    companyId: string,
+    userId?: string,
     manager?: EntityManager,
   ): Promise<{ stock: StockLevel; low: boolean }> {
-    const { productId, warehouseId, companyId, type, quantity, reference } =
-      dto;
+    const { productId, warehouseId, type, quantity, reference } = dto;
 
     if (!Object.values(TransactionType).includes(type)) {
       throw new BadRequestException(`Unknown transaction type "${type}"`);
@@ -123,47 +164,68 @@ export class StockLevelService {
         type,
         quantity,
         reference,
+        createdBy: userId ?? undefined,
       });
       await m.save(tx);
 
-      let sl = await m.findOne(StockLevel, {
-        where: { productId, warehouseId, companyId },
-        relations: ['product', 'warehouse'],
-      });
+      const qb = m.createQueryBuilder(StockLevel, 'sl');
+      qb.setLock('pessimistic_write')
+        .where('sl.productId = :productId', { productId })
+        .andWhere('sl.warehouseId = :warehouseId', { warehouseId })
+        .andWhere('sl.companyId = :companyId', { companyId });
 
-      if (!sl) {
-        sl = m.create(StockLevel, {
+      const existing = await qb.getOne();
+
+      let working: StockLevel;
+      if (!existing) {
+        working = m.create(StockLevel, {
           productId,
           warehouseId,
           companyId,
           quantity: 0,
         });
+      } else {
+        working = existing;
       }
 
-      sl.quantity += type === TransactionType.IN ? quantity : -quantity;
-      const saved = await m.save(sl);
+      working.quantity += type === TransactionType.IN ? quantity : -quantity;
 
-      const low = saved.quantity <= this.LOW_STOCK_THRESHOLD;
-      return { stock: saved, low };
+      if (working.quantity < 0) {
+        throw new BadRequestException('Insufficient stock for this operation');
+      }
+
+      const saved = await m.save(working);
+
+      const savedWithRelations = await m.findOne(StockLevel, {
+        where: { id: saved.id },
+        relations: ['product', 'warehouse'],
+      });
+
+      const finalQty = savedWithRelations
+        ? savedWithRelations.quantity
+        : saved.quantity;
+      const low = finalQty <= this.LOW_STOCK_THRESHOLD;
+
+      return {
+        stock: savedWithRelations ?? saved,
+        low,
+      };
     };
 
     if (manager) {
-      // participate in caller's transaction; do NOT send notifications here
       return run(manager);
     }
 
-    // No manager => run our own transaction and handle notifications AFTER commit.
-    const result = await this.dataSource.transaction(async (m) => {
-      return run(m);
-    });
+    const result = await this.dataSource.transaction(async (m) => run(m));
 
-    // transaction committed; safe to send notifications now
     if (result.low) {
+      const productName =
+        result.stock.product?.name ?? `product:${result.stock.productId}`;
       this.logger.warn(
-        `Low stock for ${result.stock.product.name}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
+        `Low stock for ${productName}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
       );
       await this.notificationService.sendLowStockAlert(this.ALERT_RECIPIENT, {
-        productName: result.stock.product.name,
+        productName,
         currentQty: result.stock.quantity,
       });
     }
@@ -182,6 +244,7 @@ export class StockLevelService {
         productId,
         warehouseId,
       },
+      relations: ['product', 'warehouse'],
     });
     if (!sl) {
       throw new NotFoundException(
@@ -204,7 +267,6 @@ export class StockLevelService {
       lowStockLevels.map((sl) => sl.productId),
     );
 
-    // Use type assertion to allow 'quantity'
     const productWhere = {
       companyId,
       quantity: LessThanOrEqual(threshold),

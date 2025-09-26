@@ -10,6 +10,10 @@ import { User } from '../../../entities/user.entity';
 import { Product } from '../../product/entities/product.entity';
 import { Transaction } from '../../transaction/entities/transaction.entity';
 import { StockLevel } from '../../stock-level/entities/stock-level.entity';
+import { Client } from '../../../crm/client/entities/client.entity';
+import { Invoice } from '../../../payment-invoice/entities/invoice.entity';
+import { Supplier } from '../../supplier/entities/supplier.entity';
+import { Warehouse } from '../../warehouse/entities/warehouse.entity';
 
 @Entity({ name: 'companies' })
 @Index(['name'], { unique: true })
@@ -38,4 +42,20 @@ export class Company {
     cascade: true,
   })
   stockLevels!: StockLevel[];
+
+  @OneToMany(() => Client, (client) => client.company)
+  clients!: Client[];
+
+  @OneToMany(() => Invoice, (invoice) => invoice.company)
+  invoices!: Invoice[];
+
+  @OneToMany(() => Supplier, (supplier) => supplier.company, {
+    cascade: true,
+  })
+  suppliers!: Supplier[];
+
+  @OneToMany(() => Warehouse, (warehouse) => warehouse.company, {
+    cascade: true,
+  })
+  warehouses!: Warehouse[];
 }

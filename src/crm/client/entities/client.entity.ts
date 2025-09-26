@@ -16,7 +16,8 @@ import {
 } from 'typeorm';
 import { User } from '../../../entities/user.entity';
 import { Tag } from '../../tag/entities/tag.entity';
-import { Invoice } from '../../../payment-invoice/entities/invoice.entity'; // ← add this
+import { Invoice } from '../../../payment-invoice/entities/invoice.entity';
+import { Company } from '../../../inventory/company/entities/company.entity';
 
 export enum ClientStatus {
   LEAD = 'lead',
@@ -34,8 +35,12 @@ export class Client {
   @Column()
   name!: string;
 
-  @Column({ nullable: true })
-  company?: string;
+  @ManyToOne(() => Company, (c) => c.clients, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'companyId' })
+  company!: Company;
+
+  @Column('uuid')
+  companyId!: string;
 
   @Column({ nullable: true })
   title?: string;

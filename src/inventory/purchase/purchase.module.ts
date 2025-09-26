@@ -8,12 +8,14 @@ import { PurchaseService } from './purchase.service';
 import { PurchaseController } from './purchase.controller';
 import { TransactionModule } from '../transaction/transaction.module';
 import { StockLevelModule } from '../stock-level/stock-level.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Purchase, Product]),
     TransactionModule,
     StockLevelModule,
+    AuditLogModule,
   ],
   providers: [PurchaseService],
   controllers: [PurchaseController],

@@ -53,9 +53,6 @@ export class CreateProductDto {
   // @Min(0)
   // quantity?: number;
 
-  @IsUUID()
-  companyId!: string;
-
   @IsOptional()
   @IsUUID()
   categoryId?: string;

@@ -20,5 +20,4 @@ export class CreateTransactionDto {
   @IsEnum(TransactionType) type!: TransactionType;
   @IsInt() @Min(1) quantity!: number;
   @IsString() @IsOptional() reference?: string;
-  @IsUUID() companyId!: string;
 }

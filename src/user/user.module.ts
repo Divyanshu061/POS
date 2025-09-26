@@ -8,6 +8,7 @@ import { UserService } from './user.service';
 import { UsersController } from './user.controller';
 import { AuthModule } from '../auth/auth.module';
 import { RolesModule } from '../roles/roles.module';
+import { Company } from '../inventory/company/entities/company.entity';
 
 /**
  * The UserModule encapsulates everything related to user management:
@@ -19,7 +20,7 @@ import { RolesModule } from '../roles/roles.module';
 @Module({
   imports: [
     // Register User entity for TypeORM
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, Company]),
 
     // Handle circular dependency between AuthModule and UserModule
     forwardRef(() => AuthModule),

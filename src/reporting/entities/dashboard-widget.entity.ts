@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 import { Dashboard } from '../entities/dashboard.entity';
 import { ReportDefinition } from '../entities/report-definition.entity';
+import { Company } from '../../inventory/company/entities/company.entity';
 
 @Entity('dashboard_widgets')
 export class DashboardWidget {
@@ -22,6 +23,13 @@ export class DashboardWidget {
   })
   @JoinColumn({ name: 'dashboard_id' })
   dashboard!: Dashboard;
+
+  @ManyToOne(() => Company, { nullable: false })
+  @JoinColumn({ name: 'company_id' })
+  company!: Company;
+
+  @Column({ name: 'company_id', type: 'uuid', nullable: false })
+  companyId!: string;
 
   @ManyToOne(() => ReportDefinition, (def) => def.runs, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'report_definition_id' })

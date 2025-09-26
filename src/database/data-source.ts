@@ -89,5 +89,5 @@ export const AppDataSource = new DataSource({
     InvoiceLineItem,
   ],
 
-  migrations: ['src/migrations/*.ts'],
+  migrations: ['src/database/migrations/*{.ts,.js}'],
 });

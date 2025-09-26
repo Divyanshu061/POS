@@ -55,8 +55,5 @@ export class CreateSaleDto {
   saleDate!: string;
 
   @IsUUID()
-  companyId!: string;
-
-  @IsUUID()
   warehouseId!: string;
 }

@@ -1,5 +1,3 @@
-// src/inventory/product/product.service.ts
-
 import {
   Injectable,
   NotFoundException,
@@ -32,6 +30,7 @@ export class ProductService {
   ) {}
 
   private buildCompanyWhere(companyId: string): FindOptionsWhere<Product> {
+    // Use explicit companyId column in queries for clarity and performance
     return { companyId };
   }
 
@@ -64,6 +63,9 @@ export class ProductService {
     if ('supplierId' in dto && dto.supplierId !== undefined) {
       partial.supplierId = String(dto.supplierId);
     }
+
+    // IMPORTANT: do NOT copy any companyId that might somehow be present in DTO.
+    // Company is set explicitly in create/update callsite using the authenticated user's companyId.
 
     return partial;
   }
@@ -98,7 +100,11 @@ export class ProductService {
     if (!dto.barcode) {
       dto.barcode = await this.generateUniqueBarcode();
     }
-    const base = { companyId };
+
+    const base: Pick<Product, 'companyId'> = {
+      companyId,
+    };
+
     const entity = this.repo.create({ ...base, ...this.mapDtoToEntity(dto) });
 
     try {
@@ -111,7 +117,8 @@ export class ProductService {
           action: 'CREATE',
           entity: 'product',
           entityId: String(saved.id),
-          userId, // this must be a real UUID
+          userId,
+          companyId,
           changes: saved,
           timestamp: new Date(),
         } as CreateAuditLogDto);
@@ -180,6 +187,7 @@ export class ProductService {
           entity: 'product',
           entityId: String(updated.id),
           userId, // must be a real UUID
+          companyId,
           changes: dto,
           timestamp: new Date(),
         } as CreateAuditLogDto);
@@ -219,6 +227,7 @@ export class ProductService {
           entity: 'product',
           entityId: String(productId),
           userId, // must be a real UUID
+          companyId,
           changes: undefined,
           timestamp: new Date(),
         } as CreateAuditLogDto);

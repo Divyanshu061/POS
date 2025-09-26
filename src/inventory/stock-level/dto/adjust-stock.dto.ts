@@ -42,10 +42,4 @@ export class AdjustStockDto {
   @IsOptional()
   @IsString({ message: 'Reference must be a string' })
   reference?: string;
-
-  /**
-   * ID of the company owning the stock
-   */
-  @IsUUID()
-  companyId!: string;
 }

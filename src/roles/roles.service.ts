@@ -75,4 +75,7 @@ export class RolesService {
       .where('LOWER(role.name) IN (:...names)', { names: lowerNames })
       .getMany();
   }
+  async findByIds(ids: string[]) {
+    return this.roleRepo.findBy({ id: In(ids) });
+  }
 }

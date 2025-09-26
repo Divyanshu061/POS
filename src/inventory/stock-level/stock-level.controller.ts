@@ -1,5 +1,3 @@
-//src/inventory/stock-level/stock-level.controller.ts
-
 import {
   Controller,
   Get,
@@ -20,49 +18,66 @@ import { StockLevelService } from './stock-level.service';
 import { CreateStockLevelDto } from './dto/create-stock-level.dto';
 import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
+import { CurrentCompany } from '../../auth/decorators/current-company.decorator';
+import { CurrentUser } from '../../auth/decorators/current-user-id.decorator';
 
 @Controller('inventory/stock-levels')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
 export class StockLevelController {
-  constructor(private readonly svc: StockLevelService) {}
+  constructor(private readonly stockLevelService: StockLevelService) {}
 
-  @Get('/low-stock')
+  @Get('low-stock')
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
-  lowStock(
-    @Query('companyId') companyId: string,
+  async lowStock(
+    @CurrentCompany() companyId: string,
     @Query('threshold') threshold?: string,
   ) {
-    const parsedThreshold = threshold ? parseInt(threshold, 10) : 10;
-    return this.svc.lowStockReport(companyId, parsedThreshold);
+    const parsedThreshold = threshold ? parseInt(threshold, 10) : undefined;
+    return this.stockLevelService.lowStockReport(companyId, parsedThreshold);
   }
+
   @Get()
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
-  findAll(@Query('companyId') companyId: string) {
-    return this.svc.findAll(companyId);
+  async findAll(@CurrentCompany() companyId: string) {
+    return this.stockLevelService.findAll(companyId);
   }
 
   @Get(':id')
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
-  findOne(@Param('id') id: string) {
-    return this.svc.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentCompany() companyId: string) {
+    return this.stockLevelService.findOne(id, companyId);
   }
 
   @Post()
   @Roles('admin', 'store_manager')
-  create(@Body() dto: CreateStockLevelDto) {
-    return this.svc.create(dto);
+  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+  async create(
+    @CurrentCompany() companyId: string,
+    @CurrentUser('userId') userId: string,
+    @Body() dto: CreateStockLevelDto,
+  ) {
+    return this.stockLevelService.create(dto, companyId, userId);
   }
 
   @Patch(':id')
   @Roles('admin', 'store_manager')
-  update(@Param('id') id: string, @Body() dto: UpdateStockLevelDto) {
-    return this.svc.update(id, dto);
+  async update(
+    @Param('id') id: string,
+    @CurrentCompany() companyId: string,
+    @CurrentUser('userId') userId: string,
+    @Body() dto: UpdateStockLevelDto,
+  ) {
+    return this.stockLevelService.update(id, dto, companyId, userId);
   }
 
   @Delete(':id')
   @Roles('admin')
-  remove(@Param('id') id: string) {
-    return this.svc.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @CurrentCompany() companyId: string,
+    @CurrentUser('userId') userId: string,
+  ) {
+    return this.stockLevelService.remove(id, companyId, userId);
   }
 
   @Post('adjust')
@@ -74,8 +89,12 @@ export class StockLevelController {
       transform: true,
     }),
   )
-  adjustStock(@Body() dto: AdjustStockDto) {
-    console.log('Validated DTO:', dto);
-    return this.svc.adjustStock(dto);
+  async adjustStock(
+    @CurrentCompany() companyId: string,
+    @CurrentUser('userId') _userId: string, // kept in signature if you want to log who did it; not passed to service
+    @Body() dto: AdjustStockDto,
+  ) {
+    // do NOT pass userId as the 3rd arg here — third param is EntityManager (optional).
+    return this.stockLevelService.adjustStock(dto, companyId);
   }
 }

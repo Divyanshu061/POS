@@ -7,14 +7,24 @@ import {
   JoinTable,
 } from 'typeorm';
 import { Permission } from './permission.entity';
-@Entity()
+import { User } from './user.entity';
+
+@Entity({ name: 'role' })
 export class Role {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
-  @Column({ unique: true })
-  name!: string; // e.g. "admin"
 
-  @ManyToMany(() => Permission)
-  @JoinTable({ name: 'role_permissions' })
+  @Column({ unique: true })
+  name!: string;
+
+  @ManyToMany(() => Permission, (perm) => perm.roles, { cascade: true })
+  @JoinTable({
+    name: 'role_permissions',
+    joinColumn: { name: 'roleId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'permissionsId', referencedColumnName: 'id' },
+  })
   permissions!: Permission[];
+
+  @ManyToMany(() => User, (user) => user.roles)
+  users!: User[];
 }

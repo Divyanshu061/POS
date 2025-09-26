@@ -6,11 +6,13 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreatePaymentDto {
   @IsUUID()
   invoiceId!: string;
 
+  @Type(() => Number)
   @IsNumber()
   amount!: number;
 

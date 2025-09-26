@@ -19,6 +19,7 @@ import { UpdateClientDto } from './dto/update-client.dto';
 import { ListClientsDto } from './dto/list-clients.dto';
 import { Client } from './entities/client.entity';
 import { UserId } from '../../auth/decorators/user-id.decorator';
+import { CurrentCompany } from '../../auth/decorators/current-company.decorator';
 
 @ApiTags('CRM / Clients')
 @UseGuards(AuthGuard('jwt'))
@@ -32,8 +33,9 @@ export class ClientController {
   async create(
     @Body() dto: CreateClientDto,
     @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
   ): Promise<Client> {
-    return this.clientService.create(dto, ownerId);
+    return this.clientService.create(dto, ownerId, companyId);
   }
 
   @Get()
@@ -42,8 +44,9 @@ export class ClientController {
   async findAll(
     @Query() query: ListClientsDto,
     @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
   ): Promise<{ data: Client[]; total: number }> {
-    return this.clientService.findAll(query, ownerId);
+    return this.clientService.findAll(query, ownerId, companyId);
   }
 
   @Get(':id')
@@ -52,8 +55,9 @@ export class ClientController {
   async findOne(
     @Param('id') id: string,
     @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
   ): Promise<Client> {
-    return this.clientService.findOne(id, ownerId);
+    return this.clientService.findOne(id, ownerId, companyId);
   }
 
   @Put(':id')
@@ -63,29 +67,9 @@ export class ClientController {
     @Param('id') id: string,
     @Body() dto: UpdateClientDto,
     @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
   ): Promise<Client> {
-    return this.clientService.update(id, dto, ownerId);
-  }
-
-  @Delete(':id')
-  @ApiOperation({ summary: 'Soft delete a client' })
-  @ApiResponse({ status: 204, description: 'Client deleted' })
-  async remove(
-    @Param('id') id: string,
-    @UserId() ownerId: string,
-  ): Promise<void> {
-    return this.clientService.remove(id, ownerId);
-  }
-
-  @Put(':id')
-  @ApiOperation({ summary: 'Update a client' })
-  @ApiResponse({ status: 200, type: Client })
-  async updatePut(
-    @Param('id') id: string,
-    @Body() dto: UpdateClientDto,
-    @UserId() ownerId: string,
-  ): Promise<Client> {
-    return this.clientService.update(id, dto, ownerId);
+    return this.clientService.update(id, dto, ownerId, companyId);
   }
 
   @Patch(':id')
@@ -95,7 +79,19 @@ export class ClientController {
     @Param('id') id: string,
     @Body() dto: UpdateClientDto,
     @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
   ): Promise<Client> {
-    return this.clientService.update(id, dto, ownerId);
+    return this.clientService.update(id, dto, ownerId, companyId);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft delete a client' })
+  @ApiResponse({ status: 204, description: 'Client deleted' })
+  async remove(
+    @Param('id') id: string,
+    @UserId() ownerId: string,
+    @CurrentCompany() companyId: string,
+  ): Promise<void> {
+    return this.clientService.remove(id, ownerId, companyId);
   }
 }

@@ -1,5 +1,4 @@
 // src/inventory/product/product.controller.ts
-
 import {
   Controller,
   Get,
@@ -8,7 +7,6 @@ import {
   Delete,
   Param,
   Body,
-  Query,
   UseGuards,
   ValidationPipe,
   ParseIntPipe,
@@ -17,6 +15,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
 import { Roles } from '../../auth/decorators/roles.decorator';
+import { CurrentCompany } from '../../auth/decorators/current-company.decorator';
 import { UserId } from '../../auth/decorators/user-id.decorator';
 
 import { ProductService } from './product.service';
@@ -30,10 +29,7 @@ export class ProductController {
 
   @Get()
   @Roles('admin', 'store_manager', 'sales_rep')
-  findAll(
-    @Query('companyId', new ValidationPipe({ whitelist: true }))
-    companyId: string,
-  ) {
+  findAll(@CurrentCompany() companyId: string) {
     return this.svc.findAll(companyId);
   }
 
@@ -41,8 +37,7 @@ export class ProductController {
   @Roles('admin', 'store_manager', 'sales_rep')
   findOne(
     @Param('id', ParseIntPipe) id: number,
-    @Query('companyId', new ValidationPipe({ whitelist: true }))
-    companyId: string,
+    @CurrentCompany() companyId: string,
   ) {
     return this.svc.findOne(companyId, id.toString());
   }
@@ -50,15 +45,13 @@ export class ProductController {
   @Post()
   @Roles('admin', 'store_manager')
   create(
+    @CurrentCompany() companyId: string,
+    @UserId() userId: string | null,
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: CreateProductDto,
-    @Query('companyId', new ValidationPipe({ whitelist: true }))
-    companyId: string,
-    @UserId() userId: string | null,
   ) {
-    if (!userId) {
+    if (!userId)
       throw new BadRequestException('Cannot determine user ID from token');
-    }
     return this.svc.create(companyId, dto, userId);
   }
 
@@ -66,11 +59,10 @@ export class ProductController {
   @Roles('admin', 'store_manager')
   update(
     @Param('id', ParseIntPipe) id: number,
+    @CurrentCompany() companyId: string,
+    @UserId() userId: string | null,
     @Body(new ValidationPipe({ whitelist: true, transform: true }))
     dto: UpdateProductDto,
-    @Query('companyId', new ValidationPipe({ whitelist: true }))
-    companyId: string,
-    @UserId() userId: string | null,
   ) {
     if (!userId) {
       throw new BadRequestException('Cannot determine user ID from token');
@@ -82,8 +74,7 @@ export class ProductController {
   @Roles('admin')
   remove(
     @Param('id', ParseIntPipe) id: number,
-    @Query('companyId', new ValidationPipe({ whitelist: true }))
-    companyId: string,
+    @CurrentCompany() companyId: string,
     @UserId() userId: string | null,
   ) {
     if (!userId) {
