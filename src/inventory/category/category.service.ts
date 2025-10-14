@@ -3,10 +3,12 @@ import {
   NotFoundException,
   InternalServerErrorException,
   Logger,
+  BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Category } from './entities/category.entity';
+import { Product } from '../product/entities/product.entity';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
@@ -19,8 +21,22 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly repo: Repository<Category>,
+
+    @InjectRepository(Product)
+    private readonly productRepo: Repository<Product>,
+
     private readonly audit: AuditLogService,
   ) {}
+
+  // --- helper to safely read error.code without using `any` ---
+  private getErrorCode(err: unknown): string | undefined {
+    if (err && typeof err === 'object') {
+      const maybe = err as Record<string, unknown>;
+      const code = maybe['code'];
+      return typeof code === 'string' ? code : undefined;
+    }
+    return undefined;
+  }
 
   /** Create a category under the given company */
   async create(
@@ -45,7 +61,8 @@ export class CategoryService {
       }
 
       return saved;
-    } catch (err) {
+    } catch (err: unknown) {
+      // keep logging useful info
       this.logger.error('Failed to create category', err as Error);
       throw new InternalServerErrorException('Failed to create category');
     }
@@ -90,30 +107,118 @@ export class CategoryService {
         } as CreateAuditLogDto);
       }
       return updated;
-    } catch (err) {
+    } catch (err: unknown) {
       this.logger.error(`Failed to update category ${id}`, err as Error);
       throw new InternalServerErrorException('Failed to update category');
     }
   }
 
-  /** Remove a category within the company */
-  async remove(companyId: string, id: string, userId?: string): Promise<void> {
-    const res = await this.repo.delete({ id, companyId });
-    if (!res.affected) throw new NotFoundException(`Category ${id} not found`);
+  /**
+   * Return counts of blocking references so UI can warn user
+   * GET /inventory/categories/:id/delete-check
+   */
+  async getDeleteCheck(
+    companyId: string,
+    id: string,
+  ): Promise<{ childCount: number; productCount: number }> {
+    // ensure existence
+    const category = await this.repo.findOne({ where: { id, companyId } });
+    if (!category) throw new NotFoundException(`Category ${id} not found`);
+
+    const childCount = await this.repo.count({
+      where: { parentCategoryId: id, companyId },
+    });
+    const productCount = await this.productRepo.count({
+      where: { categoryId: id, companyId },
+    });
+
+    return { childCount, productCount };
+  }
+
+  /**
+   * Remove a category within the company
+   * If force === false (default) and there are children/products -> reject with details.
+   * If force === true -> neutralize references (set NULL) and delete inside a transaction.
+   */
+  async remove(
+    companyId: string,
+    id: string,
+    userId?: string,
+    force = false,
+  ): Promise<void> {
+    // make sure category exists
+    const category = await this.repo.findOne({ where: { id, companyId } });
+    if (!category) throw new NotFoundException(`Category ${id} not found`);
+
+    const childCount = await this.repo.count({
+      where: { parentCategoryId: id, companyId },
+    });
+    const productCount = await this.productRepo.count({
+      where: { categoryId: id, companyId },
+    });
+
+    if (!force && (childCount > 0 || productCount > 0)) {
+      // signal client that deletion is blocked and provide counts for warning UI
+      throw new BadRequestException({
+        message: 'Category has dependent records. Confirm delete to proceed.',
+        details: { childCount, productCount },
+      });
+    }
+
     try {
-      if (userId) {
-        await this.audit.log({
-          action: 'DELETE',
-          entity: 'category',
-          entityId: String(id),
-          userId,
-          companyId,
-          changes: undefined,
-        } as CreateAuditLogDto);
+      // do changes inside a transaction
+      await this.repo.manager.transaction(async (manager) => {
+        const catRepo = manager.getRepository(Category);
+        const prodRepo = manager.getRepository(Product);
+
+        // neutralize products linking to this category (set to NULL)
+        if (productCount > 0) {
+          await prodRepo.update(
+            { categoryId: id, companyId },
+            { categoryId: null },
+          );
+        }
+
+        // detach immediate children (set their parentCategoryId to NULL)
+        if (childCount > 0) {
+          await catRepo.update(
+            { parentCategoryId: id, companyId },
+            { parentCategoryId: null },
+          );
+        }
+
+        // finally delete the category
+        const delRes = await catRepo.delete({ id, companyId });
+        if (!delRes.affected) {
+          throw new NotFoundException(`Category ${id} not found`);
+        }
+
+        // audit log
+        if (userId) {
+          await this.audit.log({
+            action: 'DELETE',
+            entity: 'category',
+            entityId: String(id),
+            userId,
+            companyId,
+            changes: undefined,
+          } as CreateAuditLogDto);
+        }
+      });
+    } catch (err: unknown) {
+      // better logging (if err is Error show message; otherwise stringify)
+      const logDetail =
+        err instanceof Error ? err.message : JSON.stringify(err);
+      this.logger.error(`Failed to delete category ${id}`, logDetail);
+
+      // If a DB FK still blocks, surface a clearer error
+      if (this.getErrorCode(err) === '23503') {
+        // PostgreSQL foreign key violation
+        throw new BadRequestException(
+          'Delete blocked by foreign key constraints. Consider force delete or remove dependent records first.',
+        );
       }
-    } catch (err) {
-      // audit failure shouldn't block deletion; log and continue
-      this.logger.warn('Failed to write audit log for delete', err as Error);
+      throw new InternalServerErrorException('Failed to delete category');
     }
   }
 }

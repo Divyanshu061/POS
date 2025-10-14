@@ -1,3 +1,4 @@
+// src/inventory/category/entities/category.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -23,7 +24,7 @@ export class Category {
   parent?: Category;
 
   @Column('uuid', { nullable: true })
-  parentCategoryId?: string;
+  parentCategoryId?: string | null;
 
   @OneToMany(() => Category, (child) => child.parent)
   children!: Category[];

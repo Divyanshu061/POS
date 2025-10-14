@@ -1,4 +1,4 @@
-// File: src/inventory/stock-level/stock-level.service.ts
+// src/inventory/stock-level/stock-level.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -9,12 +9,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import {
   Repository,
   DataSource,
+  EntityManager,
   LessThanOrEqual,
   Not,
   In,
   FindOptionsWhere,
   FindOperator,
-  EntityManager,
   DeepPartial,
 } from 'typeorm';
 
@@ -58,22 +58,37 @@ export class StockLevelService {
   }
 
   // Create stock-level record for the given company (tenant enforced)
-  // Accept optional userId for audit
   async create(
     dto: CreateStockLevelDto,
     companyId: string,
     userId?: string,
   ): Promise<StockLevel> {
-    // Build a payload typed for TypeORM create/save. Avoid passing `null` for optional props;
-    // use `undefined` so DeepPartial<string|undefined> matches.
-    const payload: Partial<StockLevel> = {
-      ...dto,
+    // Prevent duplicates at service level (unique index exists in DB)
+    const existing = await this.stockLevelRepo.findOne({
+      where: {
+        productId: dto.productId,
+        warehouseId: dto.warehouseId,
+        companyId,
+      },
+    });
+
+    if (existing) {
+      throw new BadRequestException(
+        'StockLevel already exists for this product+warehouse+company. Use adjust or update instead.',
+      );
+    }
+
+    const payload: DeepPartial<StockLevel> = {
+      productId: dto.productId,
+      warehouseId: dto.warehouseId,
       companyId,
+      quantity: Math.max(0, Math.trunc(dto.quantity ?? 0)),
+      reorderLevel: dto.reorderLevel ?? 10,
       createdBy: userId ?? undefined,
     };
 
-    // Cast to DeepPartial to satisfy the create() overloads
-    const sl = this.stockLevelRepo.create(payload as DeepPartial<StockLevel>);
+    // no unnecessary type assertion — create accepts DeepPartial<StockLevel>
+    const sl = this.stockLevelRepo.create(payload);
     return this.stockLevelRepo.save(sl);
   }
 
@@ -99,37 +114,78 @@ export class StockLevelService {
     return sl;
   }
 
-  // Update (tenant-enforced). Accept optional userId for audit.
+  // src/inventory/stock-level/stock-level.service.ts
   async update(
     id: string,
     dto: UpdateStockLevelDto,
     companyId: string,
     userId?: string,
   ): Promise<StockLevel> {
-    const sl = await this.findOne(id, companyId); // ensures tenant access
+    // ensure the row exists and belongs to tenant (keeps current behavior)
+    const existing = await this.findOne(id, companyId);
 
-    if (dto.quantity !== undefined) {
-      sl.quantity = dto.quantity;
-    }
-    if (dto.reorderLevel !== undefined) {
-      sl.reorderLevel = dto.reorderLevel;
+    // build a partial update object — only defined scalar fields
+    const toUpdate: Partial<StockLevel> = {};
+
+    if (dto.quantity !== undefined)
+      toUpdate.quantity = Math.trunc(dto.quantity);
+    if (dto.reorderLevel !== undefined)
+      toUpdate.reorderLevel = Math.trunc(dto.reorderLevel);
+    if (userId) toUpdate.updatedBy = userId;
+
+    // nothing to change -> return existing
+    if (Object.keys(toUpdate).length === 0) {
+      return existing;
     }
 
-    if (userId) {
-      sl.updatedBy = userId;
-    }
+    // Use repository.update to avoid touching relations/foreign keys
+    await this.stockLevelRepo.update({ id, companyId }, toUpdate);
 
-    return this.stockLevelRepo.save(sl);
+    // return fresh record with relations
+    return this.findOne(id, companyId);
   }
 
-  // Remove (tenant-enforced). Accept optional userId for audit (we log it here).
-  async remove(id: string, companyId: string, _userId?: string): Promise<void> {
-    // optional audit log so _userId is not unused (helps satisfy eslint)
-    if (_userId) {
-      this.logger.debug(`StockLevel.remove called by user ${_userId}`);
+  async listForWarehouse(
+    companyId: string,
+    warehouseId: string,
+    opts?: { productId?: number; page?: number; limit?: number },
+  ): Promise<{
+    items: StockLevel[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = Math.max(1, opts?.page ?? 1);
+    const limit = Math.max(1, Math.min(100, opts?.limit ?? 10));
+    const productId = opts?.productId;
+
+    const qb = this.stockLevelRepo
+      .createQueryBuilder('sl')
+      .leftJoinAndSelect('sl.product', 'product')
+      .leftJoinAndSelect('sl.warehouse', 'warehouse')
+      .where('sl.companyId = :companyId', { companyId })
+      .andWhere('sl.warehouseId = :warehouseId', { warehouseId });
+
+    if (productId !== undefined && productId !== null) {
+      qb.andWhere('sl.productId = :productId', { productId });
     }
 
-    const sl = await this.findOne(id, companyId); // will throw if not found / inaccessible
+    const total = await qb.getCount();
+
+    const items = await qb
+      .orderBy('product.name', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    return { items, total, page, limit };
+  }
+  // Remove (tenant-enforced)
+  async remove(id: string, companyId: string, _userId?: string): Promise<void> {
+    if (_userId)
+      this.logger.debug(`StockLevel.remove called by user ${_userId}`);
+
+    const sl = await this.findOne(id, companyId);
     await this.stockLevelRepo.remove(sl);
   }
 
@@ -137,12 +193,20 @@ export class StockLevelService {
     recipient: string,
     payload: { productName: string; currentQty: number },
   ) {
-    await this.notificationService.sendLowStockAlert(recipient, payload);
+    // keep call async but do not block callers if notification fails
+    try {
+      await this.notificationService.sendLowStockAlert(recipient, payload);
+    } catch (err) {
+      this.logger.error('Failed to send low stock alert', err as Error);
+    }
   }
 
   /**
    * Adjust stock.
-   * Note: signature unchanged from your original (dto, companyId, manager?)
+   * - creates a Transaction row
+   * - finds-or-creates StockLevel row and applies update inside a transaction + lock
+   * - rejects negative stock (business rule)
+   * - sends low-stock alert if threshold crossed
    */
   async adjustStock(
     dto: AdjustStockDto,
@@ -157,7 +221,9 @@ export class StockLevelService {
     }
 
     const run = async (m: EntityManager) => {
-      const tx = m.create(Transaction, {
+      // create transaction record (audit)
+      const txRepo = m.getRepository(Transaction);
+      const tx = txRepo.create({
         productId,
         warehouseId,
         companyId,
@@ -166,9 +232,11 @@ export class StockLevelService {
         reference,
         createdBy: userId ?? undefined,
       });
-      await m.save(tx);
+      await txRepo.save(tx);
 
-      const qb = m.createQueryBuilder(StockLevel, 'sl');
+      // lock/select the stock level row
+      const repo = m.getRepository(StockLevel);
+      const qb = repo.createQueryBuilder('sl');
       qb.setLock('pessimistic_write')
         .where('sl.productId = :productId', { productId })
         .andWhere('sl.warehouseId = :warehouseId', { warehouseId })
@@ -178,25 +246,30 @@ export class StockLevelService {
 
       let working: StockLevel;
       if (!existing) {
-        working = m.create(StockLevel, {
+        working = repo.create({
           productId,
           warehouseId,
           companyId,
           quantity: 0,
+          reorderLevel: 10,
         });
       } else {
         working = existing;
       }
 
-      working.quantity += type === TransactionType.IN ? quantity : -quantity;
-
-      if (working.quantity < 0) {
+      // apply change
+      const delta = type === TransactionType.IN ? quantity : -quantity;
+      const newQty = (working.quantity ?? 0) + delta;
+      if (newQty < 0) {
         throw new BadRequestException('Insufficient stock for this operation');
       }
 
-      const saved = await m.save(working);
+      working.quantity = Math.trunc(newQty);
+      if (userId) working.updatedBy = userId;
 
-      const savedWithRelations = await m.findOne(StockLevel, {
+      const saved = await repo.save(working);
+
+      const savedWithRelations = await repo.findOne({
         where: { id: saved.id },
         relations: ['product', 'warehouse'],
       });
@@ -212,11 +285,10 @@ export class StockLevelService {
       };
     };
 
-    if (manager) {
-      return run(manager);
-    }
-
-    const result = await this.dataSource.transaction(async (m) => run(m));
+    // run in provided manager (for higher-level transactions) or open one
+    const result = manager
+      ? await run(manager)
+      : await this.dataSource.transaction(async (m) => run(m));
 
     if (result.low) {
       const productName =
@@ -224,7 +296,8 @@ export class StockLevelService {
       this.logger.warn(
         `Low stock for ${productName}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
       );
-      await this.notificationService.sendLowStockAlert(this.ALERT_RECIPIENT, {
+      // fire-and-forget alert (we await but catch internally in sendLowStockAlert)
+      await this.sendLowStockAlert(this.ALERT_RECIPIENT, {
         productName,
         currentQty: result.stock.quantity,
       });
@@ -269,16 +342,19 @@ export class StockLevelService {
 
     const productWhere = {
       companyId,
-      quantity: LessThanOrEqual(threshold),
     } as FindOptionsWhere<Product>;
 
-    if (existingProductIds.size > 0) {
-      productWhere.id = Not(
-        In(Array.from(existingProductIds)),
-      ) as FindOperator<number>;
-    }
+    // fetch products that are low but have no stock_levels rows (e.g., never stocked)
+    productWhere.id =
+      existingProductIds.size > 0
+        ? (Not(In(Array.from(existingProductIds))) as FindOperator<number>)
+        : (undefined as unknown as FindOperator<number>);
 
-    const lowByProduct = await this.productRepo.find({ where: productWhere });
+    const lowByProduct =
+      existingProductIds.size > 0
+        ? await this.productRepo.find({ where: productWhere })
+        : [];
+
     const fallbackEntries = lowByProduct.map((p) => ({
       product: p,
       warehouse: null,

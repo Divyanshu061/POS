@@ -10,6 +10,7 @@ import {
   UsePipes,
   UseGuards,
   ValidationPipe,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -20,6 +21,7 @@ import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
 import { CurrentCompany } from '../../auth/decorators/current-company.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user-id.decorator';
+import { WarehouseStockQueryDto } from './dto/warehouse-stock-query.dto';
 
 @Controller('inventory/stock-levels')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -44,7 +46,10 @@ export class StockLevelController {
 
   @Get(':id')
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
-  async findOne(@Param('id') id: string, @CurrentCompany() companyId: string) {
+  async findOne(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentCompany() companyId: string,
+  ) {
     return this.stockLevelService.findOne(id, companyId);
   }
 
@@ -62,7 +67,7 @@ export class StockLevelController {
   @Patch(':id')
   @Roles('admin', 'store_manager')
   async update(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @CurrentCompany() companyId: string,
     @CurrentUser('userId') userId: string,
     @Body() dto: UpdateStockLevelDto,
@@ -73,11 +78,12 @@ export class StockLevelController {
   @Delete(':id')
   @Roles('admin')
   async remove(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @CurrentCompany() companyId: string,
     @CurrentUser('userId') userId: string,
   ) {
-    return this.stockLevelService.remove(id, companyId, userId);
+    await this.stockLevelService.remove(id, companyId, userId);
+    return { deleted: true };
   }
 
   @Post('adjust')
@@ -91,10 +97,26 @@ export class StockLevelController {
   )
   async adjustStock(
     @CurrentCompany() companyId: string,
-    @CurrentUser('userId') _userId: string, // kept in signature if you want to log who did it; not passed to service
+    @CurrentUser('userId') userId: string,
     @Body() dto: AdjustStockDto,
   ) {
-    // do NOT pass userId as the 3rd arg here — third param is EntityManager (optional).
-    return this.stockLevelService.adjustStock(dto, companyId);
+    return this.stockLevelService.adjustStock(dto, companyId, userId);
+  }
+
+  @Get(':warehouseId/stock')
+  @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
+  @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
+  async getWarehouseStock(
+    @CurrentCompany() companyId: string,
+    @Param('warehouseId', new ParseUUIDPipe({ version: '4' }))
+    warehouseId: string,
+    @Query() query: WarehouseStockQueryDto,
+  ) {
+    const { productId, page, limit } = query;
+    return this.stockLevelService.listForWarehouse(companyId, warehouseId, {
+      productId,
+      page,
+      limit,
+    });
   }
 }

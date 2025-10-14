@@ -1,3 +1,4 @@
+// src/inventory/warehouse/entities/warehouse.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,

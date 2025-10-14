@@ -1706,6 +1706,13 @@
   dependencies:
     "@types/mjml-core" "*"
 
+"@types/multer@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.npmjs.org/@types/multer/-/multer-2.0.0.tgz"
+  integrity sha512-C3Z9v9Evij2yST3RSBktxP9STm6OdMc5uR1xF1SGr98uv8dUlAL2hqwrZ3GVB3uyMyiegnscEK6PGtYvNrjTjw==
+  dependencies:
+    "@types/express" "*"
+
 "@types/node@*", "@types/node@^22.10.7", "@types/node@>=18":
   version "22.14.1"
   resolved "https://registry.npmjs.org/@types/node/-/node-22.14.1.tgz"
@@ -3308,6 +3315,11 @@ css-what@^6.1.0:
 
 cssesc@^3.0.0:
   version "3.0.0"
+
+csv-parse@^6.1.0:
+  version "6.1.0"
+  resolved "https://registry.npmjs.org/csv-parse/-/csv-parse-6.1.0.tgz"
+  integrity sha512-CEE+jwpgLn+MmtCpVcPtiCZpVtB6Z2OKPTr34pycYYoL7sxdOkXDdQ4lRiw6ioC0q6BLqhc6cKweCVvral8yhw==
 
 csv-stringify@^6.5.2:
   version "6.5.2"

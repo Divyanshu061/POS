@@ -1,5 +1,4 @@
 // src/inventory/stock-level/dto/adjust-stock.dto.ts
-
 import {
   IsUUID,
   IsInt,
@@ -24,7 +23,7 @@ export class AdjustStockDto {
   warehouseId!: string;
 
   /**
-   * Type of stock adjustment: IN or OUT
+   * Type of stock adjustment: IN or OUT (reuse existing TransactionType enum)
    */
   @IsEnum(TransactionType, { message: 'Type must be either IN or OUT' })
   type!: TransactionType;

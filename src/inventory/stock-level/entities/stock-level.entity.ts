@@ -1,3 +1,4 @@
+// src/inventory/stock-level/entities/stock-level.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -66,7 +67,7 @@ export class StockLevel {
   @Column({ type: 'uuid', nullable: true })
   updatedBy?: string;
 
-  // ─── Audit Fields ───────────────────────────────────────────────────────
+  // ─── Audit Fields (use camelCase to match your DB) ───────────────────────
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

@@ -1,3 +1,4 @@
+// src/inventory/supplier/entities/supplier.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -11,8 +12,9 @@ import {
 } from 'typeorm';
 import { Product } from '../../product/entities/product.entity';
 import { Company } from '../../company/entities/company.entity';
+import { SupplierContact } from './supplier-contact.entity';
 
-@Entity()
+@Entity({ name: 'supplier' })
 export class Supplier {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -21,7 +23,7 @@ export class Supplier {
   name!: string;
 
   @Column({ nullable: true })
-  contactNumber?: string;
+  contactNumber?: string; // keep lightweight primary contact
 
   @Column({ nullable: true })
   email?: string;
@@ -35,16 +37,23 @@ export class Supplier {
 
   @ManyToOne(() => Company, (company) => company.suppliers, {
     onDelete: 'CASCADE',
+    nullable: false,
   })
-  @JoinColumn({ name: 'company_id' }) // this will auto-create `company_id` column
+  @JoinColumn({ name: 'companyId' })
   company!: Company;
 
   @OneToMany(() => Product, (product) => product.supplier)
   products!: Product[];
 
-  @CreateDateColumn()
+  @OneToMany(() => SupplierContact, (contact) => contact.supplier, {
+    cascade: false,
+    eager: false,
+  })
+  contacts!: SupplierContact[];
+
+  @CreateDateColumn({ name: 'createdAt' })
   createdAt!: Date;
 
-  @UpdateDateColumn()
+  @UpdateDateColumn({ name: 'updatedAt' })
   updatedAt!: Date;
 }

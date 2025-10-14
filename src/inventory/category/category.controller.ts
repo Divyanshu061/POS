@@ -1,3 +1,4 @@
+// src/inventory/category/category.controller.ts
 import {
   Controller,
   Get,
@@ -8,6 +9,7 @@ import {
   Body,
   UseGuards,
   BadRequestException,
+  Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -60,15 +62,27 @@ export class CategoryController {
     return this.svc.update(companyId, id, dto, userId);
   }
 
+  @Get(':id/delete-check')
+  @Roles('admin', 'store_manager')
+  async deleteCheck(
+    @Param('id') id: string,
+    @CurrentCompany() companyId: string,
+  ) {
+    return this.svc.getDeleteCheck(companyId, id);
+  }
   @Delete(':id')
   @Roles('admin')
-  remove(
+  async remove(
     @Param('id') id: string,
     @CurrentCompany() companyId: string,
     @UserId() userId: string | null,
+    @Query('force') force?: string,
   ) {
     if (!userId)
       throw new BadRequestException('Cannot determine userId from token');
-    return this.svc.remove(companyId, id, userId);
+
+    const doForce = force === 'true' || force === '1';
+    await this.svc.remove(companyId, id, userId, doForce);
+    return { success: true };
   }
 }

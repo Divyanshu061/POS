@@ -58,4 +58,7 @@ export class Company {
     cascade: true,
   })
   warehouses!: Warehouse[];
+
+  @Column({ name: 'is_active', type: 'boolean', default: true })
+  isActive!: boolean;
 }

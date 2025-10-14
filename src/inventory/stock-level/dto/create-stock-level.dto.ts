@@ -1,5 +1,5 @@
-//src/inventory/stock-level/dto/create-stock-level.dto.ts
-import { IsUUID, IsInt, Min, IsOptional } from 'class-validator';
+// src/inventory/stock-level/dto/create-stock-level.dto.ts
+import { IsInt, Min, IsOptional, IsUUID } from 'class-validator';
 
 export class CreateStockLevelDto {
   @IsInt()
@@ -14,7 +14,6 @@ export class CreateStockLevelDto {
 
   /**
    * Optional reorder level for the product at this warehouse.
-   * Present to allow updates/read without unsafe-member-access warnings.
    */
   @IsOptional()
   @IsInt()

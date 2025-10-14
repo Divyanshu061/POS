@@ -1,4 +1,3 @@
-// src/inventory/warehouse/warehouse.controller.ts
 import {
   Controller,
   Get,
@@ -10,6 +9,7 @@ import {
   UseGuards,
   UsePipes,
   ValidationPipe,
+  Query,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../../auth/guards/roles.guard';
@@ -26,8 +26,18 @@ export class WarehouseController {
 
   @Get()
   @Roles('admin', 'store_manager', 'warehouse_staff', 'sales_rep')
-  findAll(@CurrentCompany() companyId: string) {
-    return this.svc.findAll(companyId);
+  findAll(
+    @CurrentCompany() companyId: string,
+    @Query('search') search?: string,
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+  ) {
+    const q = {
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+    };
+    return this.svc.findAll(companyId, q);
   }
 
   @Get(':id')
@@ -54,9 +64,19 @@ export class WarehouseController {
     return this.svc.update(id, dto, companyId);
   }
 
+  /**
+   * DELETE:
+   * - default: blocked if dependents exist (returns helpful 400 with dependentCount & sample)
+   * - with ?force=true: deletes dependents then deletes warehouse (destructive)
+   */
   @Delete(':id')
   @Roles('admin')
-  remove(@Param('id') id: string, @CurrentCompany() companyId: string) {
-    return this.svc.remove(id, companyId);
+  remove(
+    @Param('id') id: string,
+    @CurrentCompany() companyId: string,
+    @Query('force') force?: string,
+  ) {
+    const shouldForce = force === 'true';
+    return this.svc.remove(id, companyId, shouldForce);
   }
 }

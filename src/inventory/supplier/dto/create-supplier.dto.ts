@@ -1,4 +1,14 @@
-import { IsNotEmpty, IsString, IsOptional, IsEmail } from 'class-validator';
+// src/inventory/supplier/dto/create-supplier.dto.ts
+import {
+  IsNotEmpty,
+  IsString,
+  IsOptional,
+  IsEmail,
+  ValidateNested,
+  IsArray,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { CreateSupplierContactDto } from './create-supplier-contact.dto';
 
 export class CreateSupplierDto {
   @IsString()
@@ -16,4 +26,10 @@ export class CreateSupplierDto {
   @IsOptional()
   @IsString()
   address?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateSupplierContactDto)
+  contacts?: CreateSupplierContactDto[];
 }

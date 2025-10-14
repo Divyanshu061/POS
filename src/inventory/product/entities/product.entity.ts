@@ -26,8 +26,8 @@ export class Product {
   @Index()
   name!: string;
 
+  // keep unique on column (remove redundant @Index({ unique: true }))
   @Column({ unique: true })
-  @Index({ unique: true })
   sku!: string;
 
   @Column({ nullable: true })
@@ -37,7 +37,17 @@ export class Product {
   @Column('text', { nullable: true })
   description?: string;
 
-  @Column('decimal', { precision: 10, scale: 2, default: 0 })
+  // Use a transformer so TypeORM returns a number (not string) for decimal columns
+  @Column('decimal', {
+    precision: 10,
+    scale: 2,
+    default: 0,
+    transformer: {
+      to: (value: number) => value, // stored as-is
+      from: (value: string) =>
+        value === null || value === undefined ? 0 : parseFloat(value),
+    },
+  })
   unitPrice!: number;
 
   @Column({ nullable: true })
@@ -46,11 +56,33 @@ export class Product {
   @Column({ nullable: true })
   unit?: string; // e.g. 'pcs', 'kg', 'litre', etc.
 
-  @Column('uuid', { nullable: true })
-  categoryId?: string;
+  /**
+   * category relation + foreign key
+   * - relation is nullable
+   * - column categoryId is uuid nullable and typed as string | null
+   */
+  @ManyToOne(() => Category, (category) => category.products, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'categoryId' })
+  category?: Category | null;
 
   @Column('uuid', { nullable: true })
-  supplierId?: string;
+  categoryId?: string | null;
+
+  /**
+   * supplier relation + foreign key (nullable)
+   */
+  @ManyToOne(() => Supplier, (supplier) => supplier.products, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'supplierId' })
+  supplier?: Supplier | null;
+
+  @Column('uuid', { nullable: true })
+  supplierId?: string | null;
 
   /**
    * Explicit companyId column for multi-tenancy.
@@ -65,20 +97,6 @@ export class Product {
   })
   @JoinColumn({ name: 'companyId' })
   company!: Company;
-
-  @ManyToOne(() => Category, (category) => category.products, {
-    onDelete: 'SET NULL',
-    nullable: true,
-  })
-  @JoinColumn({ name: 'categoryId' })
-  category?: Category;
-
-  @ManyToOne(() => Supplier, (supplier) => supplier.products, {
-    onDelete: 'SET NULL',
-    nullable: true,
-  })
-  @JoinColumn({ name: 'supplierId' })
-  supplier?: Supplier;
 
   @OneToMany(() => StockLevel, (stockLevel) => stockLevel.product)
   stockLevels!: StockLevel[];
