@@ -1,4 +1,3 @@
-// src/inventory/stock-level/stock-level.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -20,6 +19,8 @@ import {
 
 import { StockLevel } from './entities/stock-level.entity';
 import { Product } from '../product/entities/product.entity';
+import { Warehouse } from '../warehouse/entities/warehouse.entity';
+import { Company } from '../company/entities/company.entity';
 import { CreateStockLevelDto } from './dto/create-stock-level.dto';
 import { UpdateStockLevelDto } from './dto/update-stock-level.dto';
 import { AdjustStockDto } from './dto/adjust-stock.dto';
@@ -44,6 +45,10 @@ export class StockLevelService {
     private readonly stockLevelRepo: Repository<StockLevel>,
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepo: Repository<Warehouse>,
+    @InjectRepository(Company)
+    private readonly companyRepo: Repository<Company>,
     private readonly notificationService: NotificationService,
     private readonly configService: ConfigService,
   ) {
@@ -57,12 +62,49 @@ export class StockLevelService {
     );
   }
 
+  /**
+   * Safely extract Postgres error code from an unknown error.
+   * Returns the code string (e.g., '23503') or undefined.
+   */
+  private getPgErrorCode(err: unknown): string | undefined {
+    if (!err || typeof err !== 'object') return undefined;
+    const maybe = err as Record<string, unknown>;
+    const code = maybe.code;
+    return typeof code === 'string' ? code : undefined;
+  }
+
   // Create stock-level record for the given company (tenant enforced)
   async create(
     dto: CreateStockLevelDto,
     companyId: string,
     userId?: string,
   ): Promise<StockLevel> {
+    // validate parents early and return friendly errors
+    const product = await this.productRepo.findOne({
+      where: { id: dto.productId, companyId },
+    });
+    if (!product) {
+      throw new NotFoundException(
+        `Product ${dto.productId} not found for company ${companyId}`,
+      );
+    }
+
+    const warehouse = await this.warehouseRepo.findOne({
+      where: { id: dto.warehouseId, companyId },
+    });
+    if (!warehouse) {
+      throw new NotFoundException(
+        `Warehouse ${dto.warehouseId} not found for company ${companyId}`,
+      );
+    }
+
+    const company = await this.companyRepo.findOne({
+      where: { id: companyId },
+    });
+    if (!company) {
+      throw new BadRequestException(`Company ${companyId} not found`);
+    }
+
     // Prevent duplicates at service level (unique index exists in DB)
     const existing = await this.stockLevelRepo.findOne({
       where: {
@@ -87,9 +129,23 @@ export class StockLevelService {
       createdBy: userId ?? undefined,
     };
 
-    // no unnecessary type assertion — create accepts DeepPartial<StockLevel>
     const sl = this.stockLevelRepo.create(payload);
-    return this.stockLevelRepo.save(sl);
+    try {
+      return await this.stockLevelRepo.save(sl);
+    } catch (err) {
+      const code = this.getPgErrorCode(err);
+      if (code === '23503') {
+        throw new BadRequestException(
+          'Referenced product/warehouse/company does not exist',
+        );
+      }
+      if (code === '23502') {
+        throw new BadRequestException(
+          'Attempted to set a required field to null',
+        );
+      }
+      throw err;
+    }
   }
 
   // Return all stock-levels for a company
@@ -114,23 +170,29 @@ export class StockLevelService {
     return sl;
   }
 
-  // src/inventory/stock-level/stock-level.service.ts
+  // Update (tenant-enforced) - targeted update to avoid touching FKs
   async update(
     id: string,
     dto: UpdateStockLevelDto,
     companyId: string,
     userId?: string,
   ): Promise<StockLevel> {
-    // ensure the row exists and belongs to tenant (keeps current behavior)
+    // ensure the row exists and belongs to tenant
     const existing = await this.findOne(id, companyId);
 
     // build a partial update object — only defined scalar fields
     const toUpdate: Partial<StockLevel> = {};
 
-    if (dto.quantity !== undefined)
+    if (dto.quantity !== undefined) {
+      if (dto.quantity === null)
+        throw new BadRequestException('quantity cannot be null');
       toUpdate.quantity = Math.trunc(dto.quantity);
-    if (dto.reorderLevel !== undefined)
+    }
+    if (dto.reorderLevel !== undefined) {
+      if (dto.reorderLevel === null)
+        throw new BadRequestException('reorderLevel cannot be null');
       toUpdate.reorderLevel = Math.trunc(dto.reorderLevel);
+    }
     if (userId) toUpdate.updatedBy = userId;
 
     // nothing to change -> return existing
@@ -138,8 +200,23 @@ export class StockLevelService {
       return existing;
     }
 
-    // Use repository.update to avoid touching relations/foreign keys
-    await this.stockLevelRepo.update({ id, companyId }, toUpdate);
+    try {
+      // Use repository.update to avoid touching relations/foreign keys
+      await this.stockLevelRepo.update({ id, companyId }, toUpdate);
+    } catch (err) {
+      const code = this.getPgErrorCode(err);
+      if (code === '23503') {
+        throw new BadRequestException(
+          'Referenced product/warehouse/company does not exist',
+        );
+      }
+      if (code === '23502') {
+        throw new BadRequestException(
+          'Attempted to set a required field to null',
+        );
+      }
+      throw err;
+    }
 
     // return fresh record with relations
     return this.findOne(id, companyId);
@@ -180,6 +257,7 @@ export class StockLevelService {
 
     return { items, total, page, limit };
   }
+
   // Remove (tenant-enforced)
   async remove(id: string, companyId: string, _userId?: string): Promise<void> {
     if (_userId)
@@ -219,6 +297,23 @@ export class StockLevelService {
     if (!Object.values(TransactionType).includes(type)) {
       throw new BadRequestException(`Unknown transaction type "${type}"`);
     }
+
+    // validate parents before opening transaction (gives friendly errors early)
+    const product = await this.productRepo.findOne({
+      where: { id: productId, companyId },
+    });
+    if (!product)
+      throw new NotFoundException(
+        `Product ${productId} not found for company ${companyId}`,
+      );
+
+    const warehouse = await this.warehouseRepo.findOne({
+      where: { id: warehouseId, companyId },
+    });
+    if (!warehouse)
+      throw new NotFoundException(
+        `Warehouse ${warehouseId} not found for company ${companyId}`,
+      );
 
     const run = async (m: EntityManager) => {
       // create transaction record (audit)
@@ -286,24 +381,39 @@ export class StockLevelService {
     };
 
     // run in provided manager (for higher-level transactions) or open one
-    const result = manager
-      ? await run(manager)
-      : await this.dataSource.transaction(async (m) => run(m));
+    try {
+      const result = manager
+        ? await run(manager)
+        : await this.dataSource.transaction(async (m) => run(m));
 
-    if (result.low) {
-      const productName =
-        result.stock.product?.name ?? `product:${result.stock.productId}`;
-      this.logger.warn(
-        `Low stock for ${productName}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
-      );
-      // fire-and-forget alert (we await but catch internally in sendLowStockAlert)
-      await this.sendLowStockAlert(this.ALERT_RECIPIENT, {
-        productName,
-        currentQty: result.stock.quantity,
-      });
+      if (result.low) {
+        const productName =
+          result.stock.product?.name ?? `product:${result.stock.productId}`;
+        this.logger.warn(
+          `Low stock for ${productName}: ${result.stock.quantity} <= ${this.LOW_STOCK_THRESHOLD}`,
+        );
+        // fire-and-forget alert (we await but catch internally in sendLowStockAlert)
+        await this.sendLowStockAlert(this.ALERT_RECIPIENT, {
+          productName,
+          currentQty: result.stock.quantity,
+        });
+      }
+
+      return result;
+    } catch (err) {
+      const code = this.getPgErrorCode(err);
+      if (code === '23503') {
+        throw new BadRequestException(
+          'Referenced product/warehouse/company does not exist',
+        );
+      }
+      if (code === '23502') {
+        throw new BadRequestException(
+          'Attempted to set a required field to null',
+        );
+      }
+      throw err;
     }
-
-    return result;
   }
 
   async getStockLevel(

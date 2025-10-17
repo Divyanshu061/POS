@@ -55,7 +55,13 @@ export class StockLevelController {
 
   @Post()
   @Roles('admin', 'store_manager')
-  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
   async create(
     @CurrentCompany() companyId: string,
     @CurrentUser('userId') userId: string,
@@ -64,8 +70,16 @@ export class StockLevelController {
     return this.stockLevelService.create(dto, companyId, userId);
   }
 
+  // PATCH has ValidationPipe now to reject unexpected fields early
   @Patch(':id')
   @Roles('admin', 'store_manager')
+  @UsePipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  )
   async update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @CurrentCompany() companyId: string,
