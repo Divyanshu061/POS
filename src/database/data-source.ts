@@ -11,6 +11,7 @@ import { Sale } from '../inventory/sales/entities/sale.entity';
 import { SaleItem } from '../inventory/sales/entities/sale-item.entity';
 import { StockLevel } from '../inventory/stock-level/entities/stock-level.entity';
 import { Supplier } from '../inventory/supplier/entities/supplier.entity';
+import { SupplierContact } from '../inventory/supplier/entities/supplier-contact.entity';
 import { Transaction } from '../inventory/transaction/entities/transaction.entity';
 import { Warehouse } from '../inventory/warehouse/entities/warehouse.entity';
 
@@ -58,9 +59,10 @@ export const AppDataSource = new DataSource({
     Product,
     Purchase,
     Sale,
-    SaleItem, // <- ✅ Important!
+    SaleItem,
     StockLevel,
     Supplier,
+    SupplierContact,
     Transaction,
     Warehouse,
 

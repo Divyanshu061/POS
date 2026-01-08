@@ -32,10 +32,7 @@ const PO_RECEIVE_ROLES = ['admin', 'warehouse_staff'];
 
 type UserPayload = User | AuthenticatedUser;
 
-/**
- * Narrowing helper: safe runtime check whether an unknown value has a named key.
- * After this returns true, you may treat `obj` as `Record<string, unknown>` for that key.
- */
+/** Safe runtime key check */
 function hasKey<K extends string>(
   obj: unknown,
   key: K,
@@ -52,8 +49,7 @@ export class PurchaseOrderService {
     private readonly supplierRepo: Repository<Supplier>,
     @InjectRepository(Warehouse)
     private readonly warehouseRepo: Repository<Warehouse>,
-    @InjectRepository(Product)
-    private readonly productRepo: Repository<Product>,
+    // removed productRepo injection because we use queryRunner.manager.getRepository(Product)
     private readonly dataSource: DataSource,
     private readonly stockLevelService: StockLevelService,
     @InjectRepository(User)
@@ -61,34 +57,19 @@ export class PurchaseOrderService {
     private readonly configService: ConfigService,
   ) {}
 
-  /**
-   * Safely extract a user id from either a full User entity or the token-shaped
-   * AuthenticatedUser object. Uses `hasKey` to avoid unsafe member access.
-   */
   private getUserIdFromPayload(user?: UserPayload): string {
-    if (!user) {
+    if (!user)
       throw new BadRequestException('Authenticated user id not available');
-    }
 
-    if (hasKey(user, 'userId') && typeof user.userId === 'string') {
+    if (hasKey(user, 'userId') && typeof user.userId === 'string')
       return user.userId;
-    }
-
-    if (hasKey(user, 'user_id') && typeof user.user_id === 'string') {
+    if (hasKey(user, 'user_id') && typeof user.user_id === 'string')
       return user.user_id;
-    }
-
-    if (hasKey(user, 'id') && typeof user.id === 'string') {
-      return user.id;
-    }
+    if (hasKey(user, 'id') && typeof user.id === 'string') return user.id;
 
     throw new BadRequestException('Authenticated user id not available');
   }
 
-  /**
-   * Ensure user exists in DB and has at least one of the allowed roles.
-   * Defensive: roles can be string[] or { name: string }[].
-   */
   private async ensureUserHasAnyRole(userId: string, allowedRoles: string[]) {
     const u = await this.userRepo.findOne({
       where: { id: userId },
@@ -97,14 +78,12 @@ export class PurchaseOrderService {
     if (!u) throw new NotFoundException('User not found');
 
     const rawRoles = u.roles ?? [];
-
     const roleNames: string[] = [];
     for (const r of rawRoles as unknown[]) {
       if (typeof r === 'string') {
         roleNames.push(r);
         continue;
       }
-      // use hasKey without extra generic parameters
       if (hasKey(r, 'name')) {
         const maybeName = (r as Record<string, unknown>)['name'];
         if (typeof maybeName === 'string') roleNames.push(maybeName);
@@ -114,6 +93,73 @@ export class PurchaseOrderService {
     if (!roleNames.some((r) => allowedRoles.includes(r))) {
       throw new ForbiddenException('Insufficient permissions');
     }
+  }
+
+  // ---------------- LIST WITH FILTERS ----------------
+  async findAllWithFilters(_query: any, companyId: string) {
+    // mark _query as intentionally unused for now
+    void _query;
+
+    // Later implement pagination + filters + search
+    return await this.poRepo.find({
+      where: { companyId },
+      relations: ['supplier', 'warehouse', 'items', 'items.product'],
+    });
+  }
+
+  // ---------------- APPROVE PURCHASE ORDER ----------------
+  approvePurchaseOrder(
+    id: string,
+    _dto: any,
+    _authUser: AuthenticatedUser,
+    _companyId: string,
+  ) {
+    // mark intentionally unused params to satisfy ESLint / TS
+    void _dto;
+    void _authUser;
+    void _companyId;
+
+    // TODO: approval logic
+    return { message: 'Purchase Order Approved (stub)', id };
+  }
+
+  // ---------------- CANCEL PURCHASE ORDER ----------------
+  cancelPurchaseOrder(
+    id: string,
+    _dto: any,
+    _authUser: AuthenticatedUser,
+    _companyId: string,
+  ) {
+    // mark intentionally unused params to satisfy ESLint / TS
+    void _dto;
+    void _authUser;
+    void _companyId;
+
+    // TODO: cancel logic
+    return { message: 'Purchase Order Cancelled (stub)', id };
+  }
+
+  // ---------------- DELETE PURCHASE ORDER ----------------
+  deletePurchaseOrder(
+    id: string,
+    _authUser: AuthenticatedUser,
+    _companyId: string,
+  ) {
+    // mark intentionally unused params to satisfy ESLint / TS
+    void _authUser;
+    void _companyId;
+
+    // Soft delete or hard delete later
+    return { message: 'Purchase Order Deleted (stub)', id };
+  }
+
+  // ---------------- EXPORT AS PDF ----------------
+  exportPurchaseOrderPdf(id: string, _companyId: string) {
+    // mark intentionally unused param to satisfy ESLint / TS
+    void _companyId;
+
+    // Here later generate PDF buffer or return static link
+    return { message: 'PDF Export Stub', id };
   }
 
   /**
@@ -158,97 +204,126 @@ export class PurchaseOrderService {
       );
     }
 
-    // Consider making generateOrderNumber tenant-aware in future
-    const orderNumber = await generateOrderNumber('PO', this.poRepo);
+    // NOTE: generateOrderNumber should be made tenant-aware.
+    // Update ../common/utils/generate-order-number to accept companyId and scope queries by it.
+    const orderNumber = await generateOrderNumber(
+      'PO',
+      this.poRepo,
+      currentCompanyId,
+    );
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
-    await queryRunner.startTransaction();
+
+    // We'll keep the saved PO id to re-query after releasing the queryRunner
+    let savedPOId: string | null = null;
 
     try {
+      await queryRunner.startTransaction();
+
+      // convert date strings to Date objects
+      const orderDateObj = new Date(orderDate);
+      const expectedDateObj = expectedDate ? new Date(expectedDate) : null;
+
       const po = queryRunner.manager.create(PurchaseOrder, {
         orderNumber,
         supplier,
         warehouse,
+        companyId: currentCompanyId, // ensure tenant linkage
         status: PurchaseOrderStatus.PENDING,
-        orderDate,
-        expectedDate,
+        orderDate: orderDateObj,
+        expectedDate: expectedDateObj,
         createdBy: user,
-        totalAmount: 0,
+        totalAmount: '0.00', // string to match entity decimal column
       });
       const savedPO = await queryRunner.manager.save(po);
+      savedPOId = savedPO.id;
 
-      let totalAmount = 0;
+      let totalAmountNumber = 0;
       const poItems: PurchaseOrderItem[] = [];
 
       for (const itemDto of items) {
-        const product = await this.productRepo.findOne({
-          where: { id: +itemDto.productId },
-        });
+        // IMPORTANT: use transactional manager to fetch product so the read is part of the tx
+        const product = await queryRunner.manager
+          .getRepository(Product)
+          .findOne({ where: { id: +itemDto.productId } });
+
         if (!product) {
           throw new NotFoundException(
             `Product not found: ${itemDto.productId}`,
           );
         }
 
-        totalAmount += itemDto.quantity * itemDto.unitPrice;
+        // accumulate using number, convert to string only when saving
+        totalAmountNumber += itemDto.quantity * itemDto.unitPrice;
+
         const poItem = queryRunner.manager.create(PurchaseOrderItem, {
           purchaseOrder: savedPO,
           purchaseOrderId: savedPO.id,
           product,
           productId: product.id,
+          companyId: currentCompanyId, // tenant id on each item
           quantity: itemDto.quantity,
-          unitPrice: itemDto.unitPrice.toString(),
+          unitPrice: itemDto.unitPrice.toFixed(2).toString(), // decimal as string
           receivedQty: 0,
         });
         poItems.push(poItem);
       }
 
       await queryRunner.manager.save(poItems);
-      savedPO.totalAmount = totalAmount;
+
+      // save totalAmount as string to match decimal entity column
+      savedPO.totalAmount = totalAmountNumber.toFixed(2).toString();
       await queryRunner.manager.save(savedPO);
 
+      // commit the transaction — after this the transaction is finished
       await queryRunner.commitTransaction();
-
-      // Re-query saved PO with necessary relations (including warehouse.company)
-      const fullPO = await this.poRepo.findOne({
-        where: { id: savedPO.id },
-        relations: [
-          'supplier',
-          'warehouse',
-          'warehouse.company',
-          'createdBy',
-          'items',
-          'items.product',
-        ],
-      });
-
-      if (!fullPO) {
-        throw new NotFoundException('PurchaseOrder not found after save');
+    } catch (err: unknown) {
+      // only attempt rollback if transaction is active; swallow rollback errors
+      if (queryRunner && queryRunner.isTransactionActive) {
+        // use promise catch to avoid creating an unused error variable
+        queryRunner.rollbackTransaction().catch(() => {});
       }
-
-      // Final defensive tenant check
-      const finalWarehouseCompanyId = fullPO.warehouse?.company?.id ?? null;
-      if (!finalWarehouseCompanyId) {
-        throw new BadRequestException(
-          'Saved warehouse has no company assigned',
-        );
-      }
-      if (currentCompanyId && finalWarehouseCompanyId !== currentCompanyId) {
-        throw new ForbiddenException(
-          'PurchaseOrder does not belong to the current company',
-        );
-      }
-
-      return fullPO;
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
       throw new BadRequestException(
         err instanceof Error ? err.message : 'Unknown error',
       );
     } finally {
-      await queryRunner.release();
+      // always release the runner; swallow release errors as well
+      queryRunner.release().catch(() => {});
     }
+
+    // Re-query saved PO with necessary relations (including warehouse.company)
+    if (!savedPOId)
+      throw new NotFoundException('PurchaseOrder was not created');
+
+    const fullPO = await this.poRepo.findOne({
+      where: { id: savedPOId },
+      relations: [
+        'supplier',
+        'warehouse',
+        'warehouse.company',
+        'createdBy',
+        'items',
+        'items.product',
+      ],
+    });
+
+    if (!fullPO) {
+      throw new NotFoundException('PurchaseOrder not found after save');
+    }
+
+    // Final defensive tenant check
+    const finalWarehouseCompanyId = fullPO.warehouse?.company?.id ?? null;
+    if (!finalWarehouseCompanyId) {
+      throw new BadRequestException('Saved warehouse has no company assigned');
+    }
+    if (currentCompanyId && finalWarehouseCompanyId !== currentCompanyId) {
+      throw new ForbiddenException(
+        'PurchaseOrder does not belong to the current company',
+      );
+    }
+
+    return fullPO;
   }
 
   /**
@@ -262,9 +337,9 @@ export class PurchaseOrderService {
       .leftJoinAndSelect('po.createdBy', 'createdBy')
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('items.product', 'product')
-      .where('warehouse.company_id = :companyId', {
+      .where('warehouse.companyId = :companyId', {
         companyId: currentCompanyId,
-      })
+      }) // FIXED
       .orderBy('po.createdAt', 'DESC')
       .getMany();
   }
@@ -281,9 +356,9 @@ export class PurchaseOrderService {
       .leftJoinAndSelect('po.items', 'items')
       .leftJoinAndSelect('items.product', 'product')
       .where('po.id = :id', { id })
-      .andWhere('warehouse.company_id = :companyId', {
+      .andWhere('warehouse.companyId = :companyId', {
         companyId: currentCompanyId,
-      })
+      }) // FIXED
       .getOne();
 
     if (!po) throw new NotFoundException(`PurchaseOrder not found: ${id}`);
@@ -354,7 +429,6 @@ export class PurchaseOrderService {
           manager,
         );
 
-        // Validate shape at runtime then narrow to the known typed shape
         if (
           !adjustResult ||
           typeof adjustResult !== 'object' ||
@@ -366,7 +440,6 @@ export class PurchaseOrderService {
           );
         }
 
-        // safe narrow; StockLevelService.adjustStock returns { stock: StockLevel; low: boolean }
         const { stock, low } = adjustResult as {
           stock: StockLevel;
           low: boolean;

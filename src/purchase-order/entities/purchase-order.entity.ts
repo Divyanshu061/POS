@@ -14,7 +14,7 @@ import { Warehouse } from '../../inventory/warehouse/entities/warehouse.entity';
 import { User } from '../../entities/user.entity';
 import { PurchaseOrderItem } from './purchase-order-item.entity';
 import { PurchaseOrderStatus } from '../enums/purchase-order-status.enum';
-import { Company } from '../../inventory/company/entities/company.entity'; // adjust path
+import { Company } from '../../inventory/company/entities/company.entity';
 
 // Ensure orderNumber uniqueness per company
 @Index(['companyId', 'orderNumber'], { unique: true })
@@ -30,7 +30,7 @@ export class PurchaseOrder {
   @Column({ name: 'company_id', type: 'uuid' })
   companyId!: string;
 
-  @Column({ unique: false }) // uniqueness enforced by composite index above
+  @Column({ name: 'order_number', unique: false })
   orderNumber!: string;
 
   @ManyToOne(() => Supplier, { eager: true })
@@ -53,20 +53,32 @@ export class PurchaseOrder {
   })
   status!: PurchaseOrderStatus;
 
-  @Column({ type: 'date' })
+  @Column({ type: 'date', name: 'order_date' })
   orderDate!: Date;
 
-  @Column({ type: 'date', nullable: true })
-  expectedDate!: Date;
+  @Column({ type: 'date', nullable: true, name: 'expected_date' })
+  expectedDate?: Date | null;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
-  totalAmount!: number;
+  /**
+   * decimal in DB — keep as string in TS to avoid precision / parsing surprises.
+   * Use service-level conversion when doing arithmetic (e.g. parseFloat or Decimal.js).
+   */
+  @Column({
+    type: 'decimal',
+    precision: 10,
+    scale: 2,
+    default: '0.00',
+    name: 'total_amount',
+  })
+  totalAmount!: string;
 
   @OneToMany(() => PurchaseOrderItem, (item) => item.purchaseOrder, {
     cascade: true,
+    // Consider setting eager: false if you expect large lists; current service
+    // loads items explicitly via relations in queries so default is fine.
   })
   items!: PurchaseOrderItem[];
 
-  @CreateDateColumn()
+  @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 }

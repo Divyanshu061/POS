@@ -38,6 +38,7 @@ export class Warehouse {
   @ManyToOne(() => Company, (company) => company.warehouses, {
     onDelete: 'CASCADE',
     nullable: false,
+    eager: true,
   })
   @JoinColumn({ name: 'companyId' })
   company!: Company;

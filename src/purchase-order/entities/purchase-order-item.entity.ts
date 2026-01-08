@@ -1,4 +1,3 @@
-// src/purchase-order/entities/purchase-order-item.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -11,7 +10,7 @@ import { Product } from '../../inventory/product/entities/product.entity';
 import { PurchaseOrder } from './purchase-order.entity';
 import { Company } from '../../inventory/company/entities/company.entity';
 
-// Optional: index for faster tenant + product lookups
+// Index for faster tenant + product lookups
 @Index(['companyId', 'productId'])
 @Entity('purchase_order_item')
 export class PurchaseOrderItem {
@@ -50,7 +49,10 @@ export class PurchaseOrderItem {
   @Column('int', { default: 0 })
   receivedQty!: number;
 
-  /** Price per unit */
-  @Column('decimal', { precision: 10, scale: 2 })
+  /**
+   * Store decimal as string to avoid JS float rounding & TypeORM decimals
+   * being returned as strings. Convert in service when doing math.
+   */
+  @Column('decimal', { precision: 10, scale: 2, name: 'unit_price' })
   unitPrice!: string;
 }
